@@ -9,30 +9,36 @@
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   :root {
-    --bg:          #0e0f11;
-    --bg2:         #141518;
-    --bg3:         #1c1d21;
-    --bg4:         #242529;
-    --border:      #2a2b30;
-    --border2:     #35363d;
-    --text:        #e8e9ed;
-    --text2:       #9a9ba8;
-    --text3:       #5c5d6b;
-    --accent:      #4f8ef7;
-    --accent2:     #3a6fd4;
-    --green:       #3ecf8e;
-    --yellow:      #f5a623;
-    --red:         #e05c5c;
-    --purple:      #a78bfa;
-    --font:        'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --mono:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    /* ── Light sage palette (very pale, towards white) ── */
+    --bg:          #f3f6ef;   /* app background — palest sage */
+    --bg2:         #fbfcf9;   /* cards / sidebar — near white with green hint */
+    --bg3:         #eaf0e3;   /* hover / inset surfaces */
+    --bg4:         #e0e8d6;   /* deeper inset */
+    --border:      #dfe6d4;   /* hairline borders */
+    --border2:     #c9d4b9;   /* stronger borders */
+
+    /* ── Brown text (matches the icon) ── */
+    --text:        #5e3e26;   /* primary — dark brown (icon's node_dark) */
+    --text2:       #785032;   /* secondary — medium brown */
+    --text3:       #a07c50;   /* tertiary / muted — tan brown */
+
+    /* ── Accents, re-tuned warm to suit the light theme ── */
+    --accent:      #7a5a34;   /* caramel-brown accent (replaces blue) */
+    --accent2:     #5e3e26;   /* darker caramel for hovers */
+    --green:       #6f8f5f;   /* sage green — open access, success */
+    --yellow:      #c08a2e;   /* warm ochre — sci-hub, warnings */
+    --red:         #b5503a;   /* warm terracotta — errors */
+    --purple:      #8a6db0;   /* muted plum — AI accents */
+
+    --font:        Verdana, Geneva, 'DejaVu Sans', Tahoma, sans-serif;
+    --mono:        'Courier New', Courier, monospace;
     --radius:      8px;
     --radius2:     12px;
-    --shadow:      0 4px 24px rgba(0,0,0,0.4);
+    --shadow:      0 4px 20px rgba(94,62,38,0.10);
     --transition:  0.18s ease;
   }
 
-  html { font-size: 15px; }
+  html { font-size: 14px; }
   body {
     background: var(--bg);
     color: var(--text);
@@ -42,9 +48,10 @@
   }
 
   /* ── Scrollbar ──────────────────────────────────────────────────────── */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: var(--bg2); }
-  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar { width: 7px; }
+  ::-webkit-scrollbar-track { background: var(--bg3); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
   /* ── Layout ─────────────────────────────────────────────────────────── */
   .layout { display: flex; height: 100vh; overflow: hidden; }
@@ -132,7 +139,7 @@
     background: var(--bg4);
     color: var(--text3);
   }
-  .db-badge.free { background: rgba(62,207,142,0.12); color: var(--green); }
+  .db-badge.free { background: var(--green-tint); color: var(--green); }
 
   .select-all-btn {
     margin: 6px 12px 0;
@@ -173,23 +180,148 @@
 
   /* History */
   .history-list {
-    flex: 1;
+    max-height: 140px;
     overflow-y: auto;
     padding: 0 12px 12px;
   }
   .history-item {
-    padding: 7px 10px;
+    display: flex;
+    align-items: center;
     border-radius: var(--radius);
+    transition: background var(--transition);
+    margin-bottom: 1px;
+  }
+  .history-item:hover { background: var(--bg3); }
+  .history-text {
+    flex: 1;
+    padding: 7px 10px;
     font-size: 0.78rem;
     color: var(--text2);
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .history-item:hover .history-text { color: var(--text); }
+  .history-text::before { content: '↺ '; color: var(--text3); }
+  .history-delete {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 6px 9px;
+    opacity: 0;
+    transition: all var(--transition);
+    flex-shrink: 0;
+  }
+  .history-item:hover .history-delete { opacity: 1; }
+  .history-delete:hover { color: var(--red); }
+
+  /* Three-dots menu */
+  .section-with-menu {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dots-menu-wrap { position: relative; }
+  .dots-btn {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all var(--transition);
+  }
+  .dots-btn:hover { color: var(--text); background: var(--bg3); }
+  .dots-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: 100%;
+    margin-top: 4px;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    z-index: 100;
+    min-width: 150px;
+    overflow: hidden;
+  }
+  .dots-menu.open { display: block; }
+  .dots-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text2);
+    font-family: var(--font);
+    font-size: 0.76rem;
+    padding: 9px 12px;
+    cursor: pointer;
     transition: background var(--transition);
   }
-  .history-item:hover { background: var(--bg3); color: var(--text); }
-  .history-item::before { content: '↺ '; color: var(--text3); }
+  .dots-item:hover { background: var(--bg3); color: var(--red); }
+
+  /* Saved searches */
+  .saved-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 0 12px 8px;
+  }
+  .saved-item {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius);
+    transition: background var(--transition);
+    margin-bottom: 2px;
+  }
+  .saved-item:hover { background: var(--bg3); }
+  .saved-item-main {
+    flex: 1;
+    padding: 7px 10px;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .saved-name {
+    font-size: 0.8rem;
+    color: var(--text);
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .saved-name::before { content: '★ '; color: var(--yellow); }
+  .saved-sub {
+    font-size: 0.7rem;
+    color: var(--text3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+  .saved-delete {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 6px 10px;
+    opacity: 0;
+    transition: all var(--transition);
+    flex-shrink: 0;
+  }
+  .saved-item:hover .saved-delete { opacity: 1; }
+  .saved-delete:hover { color: var(--red); }
+  .saved-empty {
+    font-size: 0.72rem;
+    color: var(--text3);
+    padding: 6px 10px;
+    font-style: italic;
+  }
 
   /* Settings btn */
   .sidebar-bottom {
@@ -239,7 +371,7 @@
   }
   .search-input:focus {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(79,142,247,0.12);
+    box-shadow: 0 0 0 3px var(--accent-tint);
   }
   .search-input::placeholder { color: var(--text3); }
   .search-icon {
@@ -312,7 +444,7 @@
     font-weight: 600;
     letter-spacing: 0.04em;
   }
-  .ai-badge.on  { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .ai-badge.on  { background: var(--purple-tint); color: var(--purple); }
   .ai-badge.off { background: var(--bg3); color: var(--text3); }
 
   /* ── Results area ────────────────────────────────────────────────────── */
@@ -324,8 +456,8 @@
 
   /* MeSH */
   .mesh-box {
-    background: rgba(79,142,247,0.07);
-    border: 1px solid rgba(79,142,247,0.2);
+    background: var(--accent-tint);
+    border: 1px solid var(--accent-tint2);
     border-radius: var(--radius2);
     padding: 12px 16px;
     margin-bottom: 18px;
@@ -336,7 +468,7 @@
   }
   .mesh-label { font-size: 0.72rem; color: var(--accent); font-weight: 600; }
   .mesh-tag {
-    background: rgba(79,142,247,0.12);
+    background: var(--accent-tint);
     color: var(--accent);
     padding: 2px 10px;
     border-radius: 20px;
@@ -344,12 +476,12 @@
     cursor: pointer;
     transition: background var(--transition);
   }
-  .mesh-tag:hover { background: rgba(79,142,247,0.25); }
+  .mesh-tag:hover { background: var(--accent-tint2); }
 
   /* Cochrane banner */
   .cochrane-banner {
-    background: rgba(245,166,35,0.07);
-    border: 1px solid rgba(245,166,35,0.2);
+    background: var(--yellow-tint);
+    border: 1px solid var(--yellow-tint2);
     border-radius: var(--radius2);
     padding: 10px 16px;
     margin-bottom: 14px;
@@ -386,8 +518,8 @@
     font-family: var(--font);
   }
   .action-btn:hover { border-color: var(--border2); color: var(--text); }
-  .action-btn.primary { background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.3); color: var(--accent); }
-  .action-btn.primary:hover { background: rgba(79,142,247,0.2); }
+  .action-btn.primary { background: var(--accent-tint); border-color: var(--accent-tint2); color: var(--accent); }
+  .action-btn.primary:hover { background: var(--accent-tint2); }
 
   /* Source group */
   .source-group { margin-bottom: 28px; }
@@ -410,6 +542,45 @@
     font-size: 0.65rem;
     padding: 1px 6px;
     border-radius: 10px;
+  }
+  .source-spinner {
+    font-size: 0.68rem;
+    color: var(--accent);
+    font-style: italic;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .source-spinner::before {
+    content: '';
+    width: 9px; height: 9px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .source-body { min-height: 10px; }
+  .source-error {
+    font-size: 0.8rem; color: var(--yellow);
+    padding: 8px 12px;
+    background: var(--yellow-tint);
+    border-radius: var(--radius);
+  }
+  .source-empty {
+    font-size: 0.78rem; color: var(--text3);
+    padding: 8px 12px; font-style: italic;
+  }
+  .search-progress {
+    color: var(--text3);
+    font-weight: 400;
+    margin-left: 6px;
+    font-size: 0.78rem;
+  }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   /* Article card */
@@ -452,9 +623,9 @@
   }
   .meta-tag.journal { color: var(--text2); }
   .meta-tag.year { color: var(--text2); }
-  .meta-tag.q1 { background: rgba(62,207,142,0.12); color: var(--green); }
-  .meta-tag.q2 { background: rgba(79,142,247,0.12); color: var(--accent); }
-  .meta-tag.q3 { background: rgba(245,166,35,0.12); color: var(--yellow); }
+  .meta-tag.q1 { background: var(--green-tint); color: var(--green); }
+  .meta-tag.q2 { background: var(--accent-tint); color: var(--accent); }
+  .meta-tag.q3 { background: var(--yellow-tint); color: var(--yellow); }
   .meta-tag.cited { color: var(--text3); }
 
   .article-authors {
@@ -480,7 +651,7 @@
   }
 
   .ai-oneliner {
-    background: rgba(167,139,250,0.08);
+    background: var(--purple-tint);
     border-left: 2px solid var(--purple);
     padding: 6px 12px;
     border-radius: 0 var(--radius) var(--radius) 0;
@@ -512,30 +683,30 @@
     font-family: var(--font);
   }
   .link-btn.open-access {
-    background: rgba(62,207,142,0.12);
+    background: var(--green-tint);
     color: var(--green);
-    border: 1px solid rgba(62,207,142,0.2);
+    border: 1px solid var(--green-tint2);
   }
-  .link-btn.open-access:hover { background: rgba(62,207,142,0.22); }
+  .link-btn.open-access:hover { background: var(--green-tint2); }
   .link-btn.doi {
-    background: rgba(79,142,247,0.1);
+    background: var(--accent-tint);
     color: var(--accent);
-    border: 1px solid rgba(79,142,247,0.2);
+    border: 1px solid var(--accent-tint2);
   }
-  .link-btn.doi:hover { background: rgba(79,142,247,0.2); }
+  .link-btn.doi:hover { background: var(--accent-tint2); }
   .link-btn.scihub {
-    background: rgba(245,166,35,0.1);
+    background: var(--yellow-tint);
     color: var(--yellow);
-    border: 1px solid rgba(245,166,35,0.2);
+    border: 1px solid var(--yellow-tint2);
   }
-  .link-btn.scihub:hover { background: rgba(245,166,35,0.2); }
+  .link-btn.scihub:hover { background: var(--yellow-tint2); }
   .link-btn.explain-btn {
-    background: rgba(167,139,250,0.1);
+    background: var(--purple-tint);
     color: var(--purple);
-    border: 1px solid rgba(167,139,250,0.2);
+    border: 1px solid var(--purple-tint2);
     margin-left: auto;
   }
-  .link-btn.explain-btn:hover { background: rgba(167,139,250,0.2); }
+  .link-btn.explain-btn:hover { background: var(--purple-tint2); }
 
   .expand-btn {
     background: none;
@@ -597,7 +768,7 @@
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.65);
+    background: rgba(94,62,38,0.28);
     z-index: 1000;
     align-items: center;
     justify-content: center;
@@ -613,7 +784,7 @@
     max-height: 80vh;
     display: flex;
     flex-direction: column;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
   }
   .modal-header {
     padding: 18px 20px;
@@ -659,7 +830,7 @@
     border-radius: var(--radius2);
     width: 100%;
     max-width: 540px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
   }
   .settings-header {
     padding: 18px 20px;
@@ -745,7 +916,7 @@
     padding: 14px 20px;
     font-size: 0.8rem;
     color: var(--green);
-    background: rgba(62,207,142,0.07);
+    background: var(--green-tint);
     border-top: 1px solid var(--border);
     border-radius: 0 0 var(--radius2) var(--radius2);
   }
@@ -805,8 +976,8 @@
     max-width: 320px;
   }
   .toast.show { transform: translateY(0); opacity: 1; }
-  .toast.green { border-color: rgba(62,207,142,0.4); color: var(--green); }
-  .toast.red   { border-color: rgba(224,92,92,0.4);  color: var(--red); }
+  .toast.green { border-color: var(--green-tint2); color: var(--green); }
+  .toast.red   { border-color: var(--red-tint);  color: var(--red); }
 </style>
 </head>
 <body>
@@ -879,10 +1050,42 @@
       </div>
     </div>
 
-    <div class="sidebar-section">Recent searches</div>
+    <div class="sidebar-section section-with-menu">
+      <span>Saved searches</span>
+      <div class="dots-menu-wrap">
+        <button class="dots-btn" onclick="toggleDotsMenu('savedMenu', event)" title="Options">⋯</button>
+        <div class="dots-menu" id="savedMenu">
+          <button class="dots-item" onclick="clearAllSaved()">Clear all saved</button>
+        </div>
+      </div>
+    </div>
+    <div class="saved-list" id="savedList">
+      {% for s in saved %}
+      <div class="saved-item" data-id="{{ s.id }}">
+        <div class="saved-item-main" onclick='runSaved({{ s|tojson }})'>
+          <div class="saved-name">{{ s.name }}</div>
+          <div class="saved-sub">{{ s.query }}</div>
+        </div>
+        <button class="saved-delete" onclick="deleteSaved('{{ s.id }}', event)" title="Delete">✕</button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="sidebar-section section-with-menu">
+      <span>Recent searches</span>
+      <div class="dots-menu-wrap">
+        <button class="dots-btn" onclick="toggleDotsMenu('recentMenu', event)" title="Options">⋯</button>
+        <div class="dots-menu" id="recentMenu">
+          <button class="dots-item" onclick="clearAllRecent()">Clear all recent</button>
+        </div>
+      </div>
+    </div>
     <div class="history-list" id="historyList">
       {% for q in history %}
-      <div class="history-item" onclick="reuseQuery('{{ q }}')">{{ q }}</div>
+      <div class="history-item" data-query="{{ q }}">
+        <span class="history-text" onclick="reuseQuery('{{ q }}')">{{ q }}</span>
+        <button class="history-delete" onclick="deleteRecent('{{ q }}', event)" title="Remove">✕</button>
+      </div>
       {% endfor %}
     </div>
 
@@ -1043,6 +1246,7 @@
 let allArticles    = [];
 let synthesisOpen  = false;
 let searchRunning  = false;
+let lastSearchParams = null;   // for saving searches
 
 // ── DB checkboxes ─────────────────────────────────────────────────────────
 document.querySelectorAll('.db-item').forEach(item => {
@@ -1066,8 +1270,8 @@ function getSelectedDBs() {
   return [...document.querySelectorAll('.db-item.checked')].map(i => i.dataset.db);
 }
 
-// ── Search ─────────────────────────────────────────────────────────────────
-async function runSearch() {
+// ── Search (progressive streaming) ─────────────────────────────────────────
+function runSearch() {
   const query = document.getElementById('searchInput').value.trim();
   const dbs   = getSelectedDBs();
   if (!query) { showToast('Please enter a search query.', 'red'); return; }
@@ -1075,103 +1279,181 @@ async function runSearch() {
   if (searchRunning) return;
 
   searchRunning = true;
-  setStatus('searching', `Searching ${dbs.length} database(s)…`);
   document.getElementById('searchBtn').disabled = true;
-
-  // clear
   allArticles = [];
   closeSynthesis();
-  showLoadingCards();
 
-  try {
-    const res  = await fetch('/search', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        query,
-        sources:     dbs,
-        max_results: parseInt(document.getElementById('maxResults').value) || 10,
-        year_from:   document.getElementById('yearFrom').value || null,
-        year_to:     document.getElementById('yearTo').value   || null,
-      })
-    });
-    const data = await res.json();
-    if (data.error) { setStatus('error', data.error); showToast(data.error,'red'); return; }
+  lastSearchParams = {
+    query,
+    sources:     dbs,
+    max_results: parseInt(document.getElementById('maxResults').value) || 10,
+    year_from:   document.getElementById('yearFrom').value || null,
+    year_to:     document.getElementById('yearTo').value   || null,
+  };
 
-    allArticles = data.articles;
-    renderResults(data);
-    updateHistory(query);
-    setStatus('done', `Found ${data.count} unique article(s)` +
-      (data.total_pubmed ? ` · PubMed total: ${data.total_pubmed}` : ''));
-  } catch(e) {
+  // Scaffold the results area with header + a live status line
+  scaffoldResults();
+  setStatus('searching', 'Searching…');
+
+  // POST then read the SSE stream from the response body
+  fetch('/search_stream', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(lastSearchParams)
+  }).then(response => {
+    const reader  = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    function pump() {
+      return reader.read().then(({done, value}) => {
+        if (done) { finishSearch(query); return; }
+        buffer += decoder.decode(value, {stream:true});
+
+        // SSE events are separated by double newlines
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();   // keep incomplete tail
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data:')) continue;
+          try { handleSearchEvent(JSON.parse(line.slice(5).trim())); }
+          catch(e) { /* ignore parse errors on keep-alives */ }
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(e => {
     setStatus('error', 'Search failed: ' + e.message);
     showToast('Search error: ' + e.message, 'red');
-  } finally {
     searchRunning = false;
     document.getElementById('searchBtn').disabled = false;
+  });
+}
+
+// Build the empty results shell with a sticky header
+function scaffoldResults() {
+  const area = document.getElementById('resultsArea');
+  area.innerHTML = `
+    <div id="meshSlot"></div>
+    <div id="cochraneSlot"></div>
+    <div class="results-header" id="resultsHeader">
+      <div class="results-count"><strong id="runningCount">0</strong> articles
+        <span id="searchProgress" class="search-progress"></span>
+      </div>
+      <div class="action-row">
+        <button class="action-btn primary" onclick="openSynthesis()">✦ AI Synthesis</button>
+        <button class="action-btn" onclick="saveCurrentSearch()">★ Save</button>
+        <button class="action-btn" onclick="openExport()">↓ Export</button>
+      </div>
+    </div>
+    <div id="sourceGroups"></div>`;
+}
+
+function handleSearchEvent(ev) {
+  if (ev.type === 'mesh' && ev.mesh && ev.mesh.length) {
+    document.getElementById('meshSlot').innerHTML =
+      '<div class="mesh-box"><span class="mesh-label">💡 MeSH</span>' +
+      ev.mesh.map(m => `<span class="mesh-tag" onclick="useMesh('${escAttr(m.text)}')">${escHtml(m.text)}</span>`).join('') +
+      '</div>';
+  }
+  else if (ev.type === 'cochrane') {
+    document.getElementById('cochraneSlot').innerHTML =
+      `<div class="cochrane-banner">🩺 <strong>Cochrane Library:</strong> No public API —
+        <a href="${ev.link}" target="_blank">open search in browser ↗</a></div>`;
+  }
+  else if (ev.type === 'source_start') {
+    setStatus('searching', `Searching ${ev.source}… (${ev.index}/${ev.total})`);
+    document.getElementById('searchProgress').textContent =
+      `· searching ${ev.source} (${ev.index}/${ev.total})`;
+    // Add a placeholder group with a spinner
+    addSourcePlaceholder(ev.source);
+  }
+  else if (ev.type === 'source_done') {
+    fillSourceGroup(ev.source, ev.articles);
+    document.getElementById('runningCount').textContent = ev.running_count;
+  }
+  else if (ev.type === 'source_error') {
+    fillSourceGroup(ev.source, [], ev.text);
+  }
+  else if (ev.type === 'done') {
+    document.getElementById('runningCount').textContent = ev.count;
+  }
+  else if (ev.type === 'error') {
+    setStatus('error', ev.text); showToast(ev.text, 'red');
   }
 }
 
-// ── Render ─────────────────────────────────────────────────────────────────
-function renderResults(data) {
-  const area = document.getElementById('resultsArea');
-  area.innerHTML = '';
-
-  // MeSH
-  if (data.mesh && data.mesh.length) {
-    const box = document.createElement('div');
-    box.className = 'mesh-box';
-    box.innerHTML = '<span class="mesh-label">💡 MeSH</span>' +
-      data.mesh.map(m => `<span class="mesh-tag" onclick="useMesh('${m.text}')">${m.text}</span>`).join('');
-    area.appendChild(box);
-  }
-
-  // Cochrane banner
-  if (data.cochrane_link) {
-    const banner = document.createElement('div');
-    banner.className = 'cochrane-banner';
-    banner.innerHTML = `🩺 <strong>Cochrane Library:</strong> No public API — 
-      <a href="${data.cochrane_link}" target="_blank">open search in browser ↗</a>`;
-    area.appendChild(banner);
-  }
-
-  if (!data.articles.length) {
-    area.innerHTML += `<div class="empty-state">
-      <div class="empty-icon">🔍</div>
-      <div class="empty-title">No results found</div>
-      <div class="empty-sub">Try different keywords or expand the date range.</div>
+function addSourcePlaceholder(source) {
+  const groups = document.getElementById('sourceGroups');
+  const id = 'grp_' + source.replace(/\W/g,'');
+  if (document.getElementById(id)) return;
+  const grp = document.createElement('div');
+  grp.className = 'source-group';
+  grp.id = id;
+  grp.innerHTML = `
+    <div class="source-group-title">
+      ${sourceIcon(source)} ${source}
+      <span class="source-spinner" id="spin_${id}">searching…</span>
+    </div>
+    <div class="source-body" id="body_${id}">
+      <div class="loading-card"><div class="loading-line med"></div>
+        <div class="loading-line short"></div></div>
     </div>`;
+  groups.appendChild(grp);
+}
+
+function fillSourceGroup(source, articles, errorText) {
+  const id   = 'grp_' + source.replace(/\W/g,'');
+  const grp  = document.getElementById(id);
+  if (!grp) return;
+  const spin = document.getElementById('spin_' + id);
+  const body = document.getElementById('body_' + id);
+
+  // Assign global indices for explain/cards
+  const startIdx = allArticles.length;
+  articles.forEach(a => allArticles.push(a));
+
+  if (spin) spin.outerHTML = `<span class="source-count">${articles.length}</span>`;
+
+  if (errorText) {
+    body.innerHTML = `<div class="source-error">⚠ ${escHtml(errorText)}</div>`;
     return;
   }
+  if (!articles.length) {
+    body.innerHTML = `<div class="source-empty">No results from this source.</div>`;
+    return;
+  }
+  body.innerHTML = '';
+  articles.forEach((a, i) => {
+    const card = makeCard({...a, _idx: startIdx + i});
+    card.style.animation = 'fadeInUp 0.3s ease';
+    body.appendChild(card);
+  });
+}
 
-  // Results header
-  const header = document.createElement('div');
-  header.className = 'results-header';
-  header.innerHTML = `
-    <div class="results-count"><strong>${data.count}</strong> unique articles found</div>
-    <div class="action-row">
-      <button class="action-btn primary" onclick="openSynthesis()">✦ AI Synthesis</button>
-      <button class="action-btn" onclick="openExport()">↓ Export</button>
-    </div>`;
-  area.appendChild(header);
+function finishSearch(query) {
+  searchRunning = false;
+  document.getElementById('searchBtn').disabled = false;
+  updateHistory(query);
+  const n = allArticles.length;
+  document.getElementById('searchProgress').textContent = '';
+  setStatus('done', `Found ${n} unique article${n===1?'':'s'}`);
 
-  // Group by source
-  const groups = {};
-  data.articles.forEach((a,i) => {
-    if (!groups[a.source]) groups[a.source] = [];
-    groups[a.source].push({...a, _idx: i});
+  // Remove any leftover empty placeholder groups
+  document.querySelectorAll('.source-group').forEach(g => {
+    const body = g.querySelector('.source-body');
+    if (body && !body.children.length) g.remove();
   });
 
-  Object.entries(groups).forEach(([source, arts]) => {
-    const grp = document.createElement('div');
-    grp.className = 'source-group';
-    grp.innerHTML = `<div class="source-group-title">
-      ${sourceIcon(source)} ${source}
-      <span class="source-count">${arts.length}</span>
-    </div>`;
-    arts.forEach(a => grp.appendChild(makeCard(a)));
-    area.appendChild(grp);
-  });
+  if (n === 0) {
+    document.getElementById('sourceGroups').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">No results found</div>
+        <div class="empty-sub">Try different keywords or expand the date range.</div>
+      </div>`;
+  }
 }
 
 function sourceIcon(s) {
@@ -1334,13 +1616,115 @@ function reuseQuery(q) {
 }
 function updateHistory(q) {
   const list = document.getElementById('historyList');
-  if (![...list.querySelectorAll('.history-item')].some(i => i.textContent.includes(q))) {
-    const item = document.createElement('div');
-    item.className = 'history-item';
-    item.textContent = q;
-    item.onclick = () => reuseQuery(q);
-    list.prepend(item);
+  if ([...list.querySelectorAll('.history-item')].some(i => i.dataset.query === q)) return;
+  const item = document.createElement('div');
+  item.className = 'history-item';
+  item.dataset.query = q;
+  item.innerHTML =
+    `<span class="history-text" onclick="reuseQuery('${escAttr(q)}')">${escHtml(q)}</span>
+     <button class="history-delete" onclick="deleteRecent('${escAttr(q)}', event)" title="Remove">✕</button>`;
+  list.prepend(item);
+}
+
+// ── Three-dots menus ───────────────────────────────────────────────────────
+function toggleDotsMenu(id, event) {
+  event.stopPropagation();
+  const menu = document.getElementById(id);
+  const isOpen = menu.classList.contains('open');
+  // close all menus first
+  document.querySelectorAll('.dots-menu').forEach(m => m.classList.remove('open'));
+  if (!isOpen) menu.classList.add('open');
+}
+// click anywhere else closes menus
+document.addEventListener('click', () => {
+  document.querySelectorAll('.dots-menu').forEach(m => m.classList.remove('open'));
+});
+
+// ── Delete individual recent query ─────────────────────────────────────────
+function deleteRecent(q, event) {
+  event.stopPropagation();
+  const list = document.getElementById('historyList');
+  [...list.querySelectorAll('.history-item')].forEach(i => {
+    if (i.dataset.query === q) i.remove();
+  });
+  fetch('/history/delete', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({query: q})
+  });
+}
+
+function clearAllRecent() {
+  document.querySelectorAll('.dots-menu').forEach(m => m.classList.remove('open'));
+  document.getElementById('historyList').innerHTML = '';
+  fetch('/history/clear', {method: 'POST'});
+  showToast('Recent searches cleared', '');
+}
+
+async function clearAllSaved() {
+  document.querySelectorAll('.dots-menu').forEach(m => m.classList.remove('open'));
+  if (!confirm('Remove all saved searches? This cannot be undone.')) return;
+  const res  = await fetch('/saved/clear', {method: 'POST'});
+  const data = await res.json();
+  renderSaved(data.saved || []);
+  showToast('All saved searches removed', '');
+}
+
+// ── Saved searches ─────────────────────────────────────────────────────────
+async function saveCurrentSearch() {
+  if (!lastSearchParams) { showToast('Run a search first.', 'red'); return; }
+  const name = prompt('Name this saved search:', lastSearchParams.query);
+  if (name === null) return;   // cancelled
+  const payload = {...lastSearchParams, name: name.trim() || lastSearchParams.query};
+  const res  = await fetch('/saved', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  renderSaved(data.saved);
+  showToast('Search saved ★', 'green');
+}
+
+function renderSaved(items) {
+  const list = document.getElementById('savedList');
+  if (!items || !items.length) {
+    list.innerHTML = '<div class="saved-empty">No saved searches yet</div>';
+    return;
   }
+  list.innerHTML = items.map(s => `
+    <div class="saved-item" data-id="${s.id}">
+      <div class="saved-item-main" onclick='runSaved(${JSON.stringify(s).replace(/'/g,"&#39;")})'>
+        <div class="saved-name">${escHtml(s.name)}</div>
+        <div class="saved-sub">${escHtml(s.query)}</div>
+      </div>
+      <button class="saved-delete" onclick="deleteSaved('${s.id}', event)" title="Delete">✕</button>
+    </div>`).join('');
+}
+
+function runSaved(s) {
+  // Restore all parameters then search
+  document.getElementById('searchInput').value = s.query;
+  document.getElementById('maxResults').value  = s.max_results || 10;
+  document.getElementById('yearFrom').value    = s.year_from || '';
+  document.getElementById('yearTo').value      = s.year_to   || '';
+
+  // Restore database selection
+  document.querySelectorAll('.db-item').forEach(item => {
+    const on = (s.sources || []).includes(item.dataset.db);
+    item.classList.toggle('checked', on);
+    item.querySelector('input').checked = on;
+  });
+
+  runSearch();
+}
+
+async function deleteSaved(id, event) {
+  event.stopPropagation();   // don't trigger runSaved
+  const res  = await fetch('/saved/' + id, {method: 'DELETE'});
+  const data = await res.json();
+  renderSaved(data.saved);
+  showToast('Saved search removed', '');
 }
 
 // ── MeSH ──────────────────────────────────────────────────────────────────
@@ -1377,6 +1761,9 @@ function escHtml(s) {
   return String(s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escAttr(s) {
+  return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');
 }
 
 // ── Keyboard shortcut ──────────────────────────────────────────────────────

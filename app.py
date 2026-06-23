@@ -525,7 +525,8 @@ SESSION = {"articles": [], "query": "", "history": [], "last_synthesis": ""}
 def index():
     return render_template("index.html",
                            ai_on=bool(CONFIG.get("anthropic_api_key")),
-                           history=SESSION["history"][-10:])
+                           history=SESSION["history"][-10:],
+                           saved=load_saved())
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -585,6 +586,98 @@ def search():
         "count": len(results),
     })
 
+@app.route("/search_stream", methods=["POST"])
+def search_stream():
+    """Streaming search — emits results per source via SSE as they complete."""
+    data    = request.json
+    query   = data.get("query","").strip()
+    sources = data.get("sources",[])
+    max_r   = int(data.get("max_results", MAX_RESULTS_DEFAULT))
+    y_from  = int(data["year_from"]) if data.get("year_from") else None
+    y_to    = int(data["year_to"])   if data.get("year_to")   else None
+
+    if not query:
+        return Response("data: "+json.dumps({"type":"error","text":"Empty query"})+"\n\n",
+                        mimetype="text/event-stream")
+
+    # Reset session up front
+    SESSION["articles"] = []
+    SESSION["query"]    = query
+    SESSION["last_synthesis"] = ""
+    if query not in SESSION["history"]: SESSION["history"].append(query)
+
+    # Ordered list of (key, label, callable) to run
+    def make_runners(seen):
+        runners = []
+        if "pubmed" in sources or "all" in sources:
+            runners.append(("pubmed", "PubMed",
+                            lambda: search_pubmed(query, max_r, y_from, y_to, seen)))
+        if "scopus" in sources or "all" in sources:
+            runners.append(("scopus", "Scopus",
+                            lambda: (search_scopus(query, max_r, y_from, y_to, seen), 0)))
+        if "wos" in sources or "all" in sources:
+            runners.append(("wos", "Web of Science",
+                            lambda: (search_wos(query, max_r, y_from, y_to, seen), 0)))
+        if "clinicaltrials" in sources or "all" in sources:
+            runners.append(("clinicaltrials", "ClinicalTrials.gov",
+                            lambda: (search_clinicaltrials(query, max_r, y_from, y_to, seen), 0)))
+        if "arxiv" in sources or "all" in sources:
+            runners.append(("arxiv", "arXiv",
+                            lambda: (search_arxiv(query, max_r, y_from, y_to, seen), 0)))
+        if "medrxiv" in sources or "all" in sources:
+            runners.append(("medrxiv", "medRxiv",
+                            lambda: (search_biorxiv(query,"medrxiv",max_r,y_from,y_to,seen), 0)))
+        if "biorxiv" in sources or "all" in sources:
+            runners.append(("biorxiv", "bioRxiv",
+                            lambda: (search_biorxiv(query,"biorxiv",max_r,y_from,y_to,seen), 0)))
+        return runners
+
+    def generate():
+        seen = make_dedup_set()
+        all_results = []
+
+        # 1. MeSH first (fast, gives the user something immediately)
+        if "pubmed" in sources or "all" in sources:
+            mesh = get_mesh(query)
+            yield "data: " + json.dumps({"type":"mesh","mesh":mesh}) + "\n\n"
+
+        # 2. Cochrane link (instant)
+        if "cochrane" in sources or "all" in sources:
+            encoded = urllib.parse.quote(query.replace(" ","+"))
+            link = f"https://www.cochranelibrary.com/search?searchBy=6&searchText={encoded}"
+            yield "data: " + json.dumps({"type":"cochrane","link":link}) + "\n\n"
+
+        runners = make_runners(seen)
+        total_sources = len(runners)
+
+        # 3. Each source — announce start, then emit its articles
+        for i, (key, label, fn) in enumerate(runners, 1):
+            yield "data: " + json.dumps({
+                "type":"source_start", "source":label,
+                "index":i, "total":total_sources
+            }) + "\n\n"
+            try:
+                r = fn()
+                res = r[0] if isinstance(r, tuple) else r
+                total_pubmed = r[1] if (isinstance(r, tuple) and key=="pubmed") else 0
+            except Exception as e:
+                res = []; total_pubmed = 0
+                yield "data: " + json.dumps({"type":"source_error","source":label,"text":str(e)}) + "\n\n"
+
+            all_results.extend(res)
+            SESSION["articles"] = all_results   # keep session live for synthesis/export
+            yield "data: " + json.dumps({
+                "type":"source_done", "source":label,
+                "articles":res, "total_pubmed":total_pubmed,
+                "running_count":len(all_results)
+            }) + "\n\n"
+
+        # 4. Final done event
+        yield "data: " + json.dumps({"type":"done","count":len(all_results)}) + "\n\n"
+
+    return Response(stream_with_context(generate()), mimetype="text/event-stream",
+                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
 @app.route("/synthesis")
 def synthesis():
     query    = SESSION.get("query","")
@@ -639,9 +732,104 @@ def settings():
 def history():
     return jsonify(SESSION["history"][-20:])
 
+@app.route("/history/delete", methods=["POST"])
+def history_delete():
+    q = (request.json or {}).get("query","")
+    SESSION["history"] = [h for h in SESSION["history"] if h != q]
+    return jsonify({"ok": True, "history": SESSION["history"][-20:]})
+
+@app.route("/history/clear", methods=["POST"])
+def history_clear():
+    SESSION["history"] = []
+    return jsonify({"ok": True})
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SAVED SEARCHES  (persisted to disk so they survive restarts)
+# ══════════════════════════════════════════════════════════════════════════════
+
+SAVED_FILE = CONFIG_DIR / "saved_searches.json"
+
+def load_saved():
+    if SAVED_FILE.exists():
+        try: return json.loads(SAVED_FILE.read_text())
+        except: return []
+    return []
+
+def write_saved(items):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SAVED_FILE.write_text(json.dumps(items, indent=2))
+
+@app.route("/saved", methods=["GET"])
+def saved_list():
+    return jsonify(load_saved())
+
+@app.route("/saved", methods=["POST"])
+def saved_add():
+    data  = request.json
+    items = load_saved()
+    entry = {
+        "id":        str(int(time.time()*1000)),
+        "name":      data.get("name","").strip() or data.get("query","Untitled"),
+        "query":     data.get("query",""),
+        "sources":   data.get("sources",[]),
+        "year_from": data.get("year_from"),
+        "year_to":   data.get("year_to"),
+        "max_results": data.get("max_results", MAX_RESULTS_DEFAULT),
+        "created":   datetime.now().strftime("%Y-%m-%d"),
+    }
+    # avoid exact duplicates (same name + query)
+    if not any(s["name"] == entry["name"] and s["query"] == entry["query"] for s in items):
+        items.append(entry)
+        write_saved(items)
+    return jsonify({"ok": True, "saved": items})
+
+@app.route("/saved/clear", methods=["POST"])
+def saved_clear():
+    write_saved([])
+    return jsonify({"ok": True, "saved": []})
+
+@app.route("/saved/<sid>", methods=["DELETE"])
+def saved_delete(sid):
+    items = [s for s in load_saved() if s["id"] != sid]
+    write_saved(items)
+    return jsonify({"ok": True, "saved": items})
+
 if __name__ == "__main__":
-    import webbrowser, threading
-    print("\n  🔬  MedSearch v4.0  —  starting…")
-    print("  Open: http://localhost:5050\n")
-    threading.Timer(1.2, lambda: webbrowser.open("http://localhost:5050")).start()
-    app.run(host="127.0.0.1", port=5050, debug=False, threaded=True)
+    import threading, socket
+
+    # Find a free port (in case 5050 is taken)
+    def free_port(preferred=5050):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("127.0.0.1", preferred)); s.close(); return preferred
+        except OSError:
+            s2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s2.bind(("127.0.0.1", 0)); port = s2.getsockname()[1]; s2.close(); return port
+
+    PORT = free_port(5050)
+    URL  = f"http://127.0.0.1:{PORT}"
+
+    def run_server():
+        app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True, use_reloader=False)
+
+    # Try to open a native window via pywebview; fall back to a browser tab.
+    try:
+        import webview  # pywebview
+        # Start Flask in a background thread
+        t = threading.Thread(target=run_server, daemon=True)
+        t.start()
+        print(f"\n  🔬  MedSearch v4.0  —  native window on {URL}\n")
+        webview.create_window(
+            "MedSearch",
+            URL,
+            width=1280, height=860,
+            min_size=(940, 640),
+        )
+        webview.start()   # blocks until window closed; then process exits cleanly
+    except ImportError:
+        import webbrowser
+        print("\n  🔬  MedSearch v4.0  —  starting…")
+        print(f"  (pywebview not installed — opening in browser instead)")
+        print(f"  Open: {URL}\n")
+        threading.Timer(1.2, lambda: webbrowser.open(URL)).start()
+        run_server()
