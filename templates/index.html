@@ -509,20 +509,6 @@
   }
   .mesh-tag:hover { background: var(--accent-tint2); }
 
-  /* Cochrane banner */
-  .cochrane-banner {
-    background: var(--yellow-tint);
-    border: 1px solid var(--yellow-tint2);
-    border-radius: var(--radius2);
-    padding: 10px 16px;
-    margin-bottom: 14px;
-    font-size: 0.8rem;
-    color: var(--yellow);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .cochrane-banner a { color: var(--yellow); }
 
   /* Results header */
   .results-header {
@@ -1059,10 +1045,10 @@
         <span class="db-name">Web of Science</span>
         <span class="db-badge">API key</span>
       </div>
-      <div class="db-item" data-db="cochrane">
+      <div class="db-item checked" data-db="cochrane">
         <div class="db-check"></div>
-        <span class="db-name">Cochrane Library</span>
-        <span class="db-badge">Browser</span>
+        <span class="db-name">Cochrane Reviews</span>
+        <span class="db-badge free">Free</span>
       </div>
     </div>
     <button class="select-all-btn" id="selectAllBtn">Select all</button>
@@ -1412,7 +1398,6 @@ function scaffoldResults() {
   const area = document.getElementById('resultsArea');
   area.innerHTML = `
     <div id="meshSlot"></div>
-    <div id="cochraneSlot"></div>
     <div class="results-header" id="resultsHeader">
       <div class="results-count"><strong id="runningCount">0</strong> articles
         <span id="searchProgress" class="search-progress"></span>
@@ -1432,11 +1417,6 @@ function handleSearchEvent(ev) {
       '<div class="mesh-box"><span class="mesh-label">💡 MeSH</span>' +
       ev.mesh.map(m => `<span class="mesh-tag" onclick="useMesh('${escAttr(m.text)}')">${escHtml(m.text)}</span>`).join('') +
       '</div>';
-  }
-  else if (ev.type === 'cochrane') {
-    document.getElementById('cochraneSlot').innerHTML =
-      `<div class="cochrane-banner">🩺 <strong>Cochrane Library:</strong> No public API —
-        <a href="${ev.link}" target="_blank">open search in browser ↗</a></div>`;
   }
   else if (ev.type === 'source_start') {
     setStatus('searching', `Searching ${ev.source}… (${ev.index}/${ev.total})`);
@@ -1534,7 +1514,7 @@ function finishSearch(query) {
 
 function sourceIcon(s) {
   const icons = {
-    'PubMed':'🧬','arXiv':'📐','ClinicalTrials':'⚕️',
+    'PubMed':'🧬','Cochrane':'🩺','arXiv':'📐','ClinicalTrials':'⚕️',
     'medRxiv':'🏥','bioRxiv':'🧫','Scopus':'📊','Web of Science':'🌐'
   };
   return icons[s] || '📄';

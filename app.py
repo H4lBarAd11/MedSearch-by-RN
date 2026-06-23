@@ -336,13 +336,16 @@ def build_pubmed_term(query, strict=True):
         return f"{q}[tiab]" if q else q
     return " AND ".join(f"{w}[tiab]" for w in words)
 
-def search_pubmed(query, max_r, y_from, y_to, seen, strict=True):
+def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
+                  extra_filter=None, source_label="PubMed"):
     results = []
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     kp   = f"&api_key={CONFIG['pubmed_api_key']}" if CONFIG.get("pubmed_api_key") else ""
     dp   = (f"&mindate={y_from or 1900}/01/01&maxdate={y_to or 2099}/12/31&datetype=pdat"
             if y_from or y_to else "")
     term = build_pubmed_term(query, strict=strict)
+    if extra_filter:
+        term = f"({term}) AND {extra_filter}"
     # sort=relevance → PubMed "Best Match" ranking (same as the website default)
     esearch = (f"{base}/esearch.fcgi?db=pubmed&term={urllib.parse.quote(term)}"
                f"&retmax={max_r}&sort=relevance&retmode=json{kp}{dp}")
@@ -415,11 +418,24 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True):
         scihub = f"{CONFIG['scihub_mirrors'][0]}/{doi}" if doi else None
         results.append({"title":title,"authors":authors,"year":year,"journal":journal,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":pmid,
-                        "abstract":abstract,"source":"PubMed","access_kind":kind,
+                        "abstract":abstract,"source":source_label,"access_kind":kind,
                         "access_link":link,"scihub":scihub,
                         "oneliner":ai_oneliner(title, abstract)})
         time.sleep(0.12)
     return results, total
+
+def search_cochrane(query, max_r, y_from, y_to, seen, strict=True):
+    """
+    Cochrane systematic reviews are indexed in PubMed under the journal
+    'Cochrane Database of Systematic Reviews'. We search PubMed restricted to
+    that journal, giving real inline results instead of a dead external link.
+    """
+    # [ta] = journal title abbreviation field; covers the current journal name.
+    cochrane_filter = '"Cochrane Database Syst Rev"[ta]'
+    res, total = search_pubmed(query, max_r, y_from, y_to, seen,
+                               strict=strict, extra_filter=cochrane_filter,
+                               source_label="Cochrane")
+    return res, total
 
 def search_arxiv(query, max_r, y_from, y_to, seen):
     results = []
@@ -662,6 +678,7 @@ def search():
 
     SOURCE_MAP = {
         "pubmed":         lambda: search_pubmed(query, max_r, y_from, y_to, seen),
+        "cochrane":       lambda: search_cochrane(query, max_r, y_from, y_to, seen),
         "arxiv":          lambda: search_arxiv(query, max_r, y_from, y_to, seen),
         "clinicaltrials": lambda: search_clinicaltrials(query, max_r, y_from, y_to, seen),
         "medrxiv":        lambda: search_biorxiv(query,"medrxiv",max_r,y_from,y_to,seen),
@@ -682,18 +699,11 @@ def search():
             if isinstance(r, tuple): r = r[0]
             results.extend(r)
 
-    # Cochrane — browser link only
-    cochrane_link = None
-    if "cochrane" in sources or "all" in sources:
-        encoded = urllib.parse.quote(query.replace(" ","+"))
-        cochrane_link = f"https://www.cochranelibrary.com/search?searchBy=6&searchText={encoded}"
-
     SESSION["articles"] = results
     return jsonify({
         "articles": results,
         "mesh": mesh,
         "total_pubmed": total_pubmed,
-        "cochrane_link": cochrane_link,
         "count": len(results),
     })
 
@@ -721,6 +731,11 @@ def search_stream():
     # Ordered list of (key, label, callable) to run
     def make_runners(seen):
         runners = []
+        # Cochrane first: systematic reviews are also in PubMed, so claiming them
+        # here (before general PubMed) labels them as Cochrane in the dedup.
+        if "cochrane" in sources or "all" in sources:
+            runners.append(("cochrane", "Cochrane",
+                            lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict)))
         if "pubmed" in sources or "all" in sources:
             runners.append(("pubmed", "PubMed",
                             lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict)))
@@ -752,12 +767,6 @@ def search_stream():
         if "pubmed" in sources or "all" in sources:
             mesh = get_mesh(query)
             yield "data: " + json.dumps({"type":"mesh","mesh":mesh}) + "\n\n"
-
-        # 2. Cochrane link (instant)
-        if "cochrane" in sources or "all" in sources:
-            encoded = urllib.parse.quote(query.replace(" ","+"))
-            link = f"https://www.cochranelibrary.com/search?searchBy=6&searchText={encoded}"
-            yield "data: " + json.dumps({"type":"cochrane","link":link}) + "\n\n"
 
         runners = make_runners(seen)
         total_sources = len(runners)
