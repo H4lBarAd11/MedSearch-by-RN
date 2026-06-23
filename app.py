@@ -140,30 +140,42 @@ def resolve_access(doi):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _claude(messages, max_tokens=100, stream=False):
-    key = CONFIG.get("anthropic_api_key","")
+    key = (CONFIG.get("anthropic_api_key","") or "").strip()
     if not key: return None
     payload = json.dumps({"model":"claude-sonnet-4-6","max_tokens":max_tokens,
                           "stream":stream,"messages":messages}).encode()
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload,
         headers={"x-api-key":key,"anthropic-version":"2023-06-01",
                  "content-type":"application/json"}, method="POST")
-    try: return urllib.request.urlopen(req, timeout=60)
-    except: return None
+    try:
+        return urllib.request.urlopen(req, timeout=60)
+    except urllib.error.HTTPError as e:
+        # Surface the API error so callers can report it
+        try:
+            detail = e.read().decode()
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"Anthropic API error {e.code}: {detail[:300]}")
+    except Exception as e:
+        raise RuntimeError(f"Anthropic request failed: {e}")
 
 def ai_oneliner(title, abstract):
-    if not CONFIG.get("anthropic_api_key") or not abstract: return None
+    if not (CONFIG.get("anthropic_api_key","") or "").strip() or not abstract: return None
     prompt = (f"Title: {title}\n\nAbstract: {abstract}\n\n"
               "In exactly one sentence (≤25 words), state the key finding. No preamble.")
-    r = _claude([{"role":"user","content":prompt}], max_tokens=80)
-    if r:
-        try: return json.loads(r.read().decode())["content"][0]["text"].strip()
-        except: pass
+    try:
+        r = _claude([{"role":"user","content":prompt}], max_tokens=80)
+        if r:
+            return json.loads(r.read().decode())["content"][0]["text"].strip()
+    except Exception:
+        # one-liners fail silently (don't spam errors per-article); synthesis surfaces them
+        return None
     return None
 
 def ai_synthesis_stream(query, articles):
     """Generator that yields SSE chunks for the synthesis."""
-    key = CONFIG.get("anthropic_api_key","")
-    if not key: yield "data: " + json.dumps({"type":"error","text":"No API key."}) + "\n\n"; return
+    key = (CONFIG.get("anthropic_api_key","") or "").strip()
+    if not key: yield "data: " + json.dumps({"type":"error","text":"No API key set. Add your Anthropic key in Settings."}) + "\n\n"; return
     if not articles: yield "data: " + json.dumps({"type":"error","text":"No articles."}) + "\n\n"; return
 
     parts = []
@@ -195,8 +207,19 @@ def ai_synthesis_stream(query, articles):
                     if chunk:
                         yield "data: " + json.dumps({"type":"chunk","text":chunk}) + "\n\n"
                 except: continue
+    except urllib.error.HTTPError as e:
+        try: detail = e.read().decode()
+        except: detail = ""
+        msg = f"Anthropic API error {e.code}. "
+        if e.code == 401:
+            msg += "Your API key is invalid or expired. Re-enter it in Settings (check for typos or extra spaces)."
+        elif e.code == 429:
+            msg += "Rate limit or insufficient credits. Check your Anthropic account balance."
+        else:
+            msg += detail[:200]
+        yield "data: " + json.dumps({"type":"error","text":msg}) + "\n\n"
     except Exception as e:
-        yield "data: " + json.dumps({"type":"error","text":str(e)}) + "\n\n"
+        yield "data: " + json.dumps({"type":"error","text":f"Request failed: {e}"}) + "\n\n"
     yield "data: " + json.dumps({"type":"done"}) + "\n\n"
 
 def ai_explain_stream(article):
@@ -266,38 +289,126 @@ def within_range(year_str, y_from, y_to):
         return True
     except: return True
 
-def search_pubmed(query, max_r, y_from, y_to, seen):
+def _pubmed_year(art_el):
+    """Extract a 4-digit year from PubDate, handling <Year> and <MedlineDate>."""
+    pd = art_el.find(".//Journal/JournalIssue/PubDate")
+    if pd is None:
+        return "n.d."
+    y = pd.find("Year")
+    if y is not None and y.text:
+        return y.text
+    md = pd.find("MedlineDate")   # e.g. "2020 Jan-Feb" or "1998-1999"
+    if md is not None and md.text:
+        m = re.search(r"\d{4}", md.text)
+        if m: return m.group(0)
+    return "n.d."
+
+# Detect whether the user typed a "power query" (operators / field tags / quotes)
+_PM_OPERATOR_RE = re.compile(r'\b(AND|OR|NOT)\b')          # Boolean operators (uppercase)
+_PM_FIELDTAG_RE = re.compile(r'\[[a-zA-Z/ ]+\]')           # field tags like [tiab], [mesh], [au]
+def is_power_query(q):
+    """True if the query uses Boolean operators, field tags, or quoted phrases."""
+    if _PM_OPERATOR_RE.search(q): return True
+    if _PM_FIELDTAG_RE.search(q): return True
+    if '"' in q: return True
+    return False
+
+def build_pubmed_term(query, strict=True):
+    """
+    Power query (operators/tags/quotes) → pass through verbatim, always.
+        The user has taken explicit control; the strict flag is ignored.
+    Strict (default) → AND the words together, each tagged [tiab] (title/abstract),
+        so results are papers actually ABOUT the terms — not tangential MeSH-tree
+        matches. e.g. 'glioblastoma temozolomide resistance'
+                   → glioblastoma[tiab] AND temozolomide[tiab] AND resistance[tiab]
+    Broad (opt-in) → bare terms; PubMed's Automatic Term Mapping expands to MeSH +
+        synonyms (the pubmed.gov default). Wider recall, more drift.
+    """
+    q = query.strip()
+    if is_power_query(q):
+        return q
+    if not strict:
+        return q   # broad: let ATM expand freely
+    # Strict: split into words, tag each [tiab], AND them.
+    # Keep short multi-word as-is if only one token.
+    words = [w for w in re.split(r'\s+', q) if w]
+    if len(words) <= 1:
+        return f"{q}[tiab]" if q else q
+    return " AND ".join(f"{w}[tiab]" for w in words)
+
+def search_pubmed(query, max_r, y_from, y_to, seen, strict=True):
     results = []
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     kp   = f"&api_key={CONFIG['pubmed_api_key']}" if CONFIG.get("pubmed_api_key") else ""
     dp   = (f"&mindate={y_from or 1900}/01/01&maxdate={y_to or 2099}/12/31&datetype=pdat"
             if y_from or y_to else "")
-    data, _ = fetch_json(f"{base}/esearch.fcgi?db=pubmed&term={urllib.parse.quote(query)}"
-                         f"&retmax={max_r}&retmode=json{kp}{dp}")
+    term = build_pubmed_term(query, strict=strict)
+    # sort=relevance → PubMed "Best Match" ranking (same as the website default)
+    esearch = (f"{base}/esearch.fcgi?db=pubmed&term={urllib.parse.quote(term)}"
+               f"&retmax={max_r}&sort=relevance&retmode=json{kp}{dp}")
+    data, _ = fetch_json(esearch)
     if not data: return results, 0
     ids   = data.get("esearchresult",{}).get("idlist",[])
     total = int(data.get("esearchresult",{}).get("count",0))
     if not ids: return results, total
+
     body, _ = http_get(f"{base}/efetch.fcgi?db=pubmed&id={','.join(ids)}&retmode=xml{kp}")
     if not body: return results, total
-    root = ET.fromstring(body)
+
+    try:
+        root = ET.fromstring(body)
+    except Exception:
+        return results, total
+
+    # Preserve the relevance order returned by esearch
+    articles_by_pmid = {}
     for art in root.findall(".//PubmedArticle"):
+        pmid_el = art.find(".//MedlineCitation/PMID")
+        if pmid_el is not None and pmid_el.text:
+            articles_by_pmid[pmid_el.text] = art
+
+    ordered = [articles_by_pmid[i] for i in ids if i in articles_by_pmid]
+
+    for art in ordered:
         med    = art.find(".//MedlineCitation")
         art_el = med.find("Article") if med is not None else None
         if art_el is None: continue
-        title   = "".join((art_el.find("ArticleTitle") or ET.Element("x")).itertext()) or "No title"
-        journal = (art_el.find(".//Journal/Title") or ET.Element("x")).text or ""
-        year    = (art_el.find(".//Journal/JournalIssue/PubDate/Year") or ET.Element("x")).text or "n.d."
+
+        title_el = art_el.find("ArticleTitle")
+        title = "".join(title_el.itertext()).strip() if title_el is not None else "No title"
+        if not title: title = "No title"
+
+        journal_el = art_el.find(".//Journal/Title")
+        journal = journal_el.text if (journal_el is not None and journal_el.text) else ""
+
+        year = _pubmed_year(art_el)
         if not within_range(year, y_from, y_to): continue
+
         aus = []
         for au in art_el.findall(".//AuthorList/Author")[:3]:
             ln = au.find("LastName"); fn = au.find("ForeName")
-            if ln is not None: aus.append(f"{ln.text}{', '+fn.text[0]+'.' if fn is not None else ''}")
-        authors = "; ".join(aus) + (" et al." if len(art_el.findall(".//AuthorList/Author"))>3 else "")
+            if ln is not None and ln.text:
+                initial = f", {fn.text[0]}." if (fn is not None and fn.text) else ""
+                aus.append(f"{ln.text}{initial}")
+        n_authors = len(art_el.findall(".//AuthorList/Author"))
+        authors = "; ".join(aus) + (" et al." if n_authors > 3 else "")
+
         doi  = next((a.text for a in art.findall(".//ArticleId") if a.get("IdType")=="doi"), None)
-        pmid = (art.find(".//MedlineCitation/PMID") or ET.Element("x")).text
-        abs_el   = art_el.find(".//Abstract/AbstractText")
-        abstract = "".join(abs_el.itertext()) if abs_el is not None else ""
+        pmid_el = art.find(".//MedlineCitation/PMID")
+        pmid = pmid_el.text if pmid_el is not None else None
+
+        # Abstract may have multiple labelled sections — join them all
+        abs_parts = art_el.findall(".//Abstract/AbstractText")
+        if abs_parts:
+            chunks = []
+            for ap in abs_parts:
+                label = ap.get("Label")
+                txt = "".join(ap.itertext())
+                chunks.append(f"{label}: {txt}" if label else txt)
+            abstract = " ".join(chunks).strip()
+        else:
+            abstract = ""
+
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
         kind, link = resolve_access(doi)
@@ -307,7 +418,7 @@ def search_pubmed(query, max_r, y_from, y_to, seen):
                         "abstract":abstract,"source":"PubMed","access_kind":kind,
                         "access_link":link,"scihub":scihub,
                         "oneliner":ai_oneliner(title, abstract)})
-        time.sleep(0.2)
+        time.sleep(0.12)
     return results, total
 
 def search_arxiv(query, max_r, y_from, y_to, seen):
@@ -595,6 +706,7 @@ def search_stream():
     max_r   = int(data.get("max_results", MAX_RESULTS_DEFAULT))
     y_from  = int(data["year_from"]) if data.get("year_from") else None
     y_to    = int(data["year_to"])   if data.get("year_to")   else None
+    strict  = data.get("strict", True)   # strict by default
 
     if not query:
         return Response("data: "+json.dumps({"type":"error","text":"Empty query"})+"\n\n",
@@ -611,7 +723,7 @@ def search_stream():
         runners = []
         if "pubmed" in sources or "all" in sources:
             runners.append(("pubmed", "PubMed",
-                            lambda: search_pubmed(query, max_r, y_from, y_to, seen)))
+                            lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict)))
         if "scopus" in sources or "all" in sources:
             runners.append(("scopus", "Scopus",
                             lambda: (search_scopus(query, max_r, y_from, y_to, seen), 0)))
@@ -721,7 +833,7 @@ def settings():
         data = request.json
         for k in ("anthropic_api_key","pubmed_api_key","scopus_api_key",
                   "wos_api_key","unpaywall_email"):
-            if k in data and data[k]: CONFIG[k] = data[k]
+            if k in data and data[k]: CONFIG[k] = data[k].strip()
         save_config(CONFIG)
         return jsonify({"ok": True})
     safe = {k: ("*"*(len(v)-4)+v[-4:] if len(v)>4 else ("set" if v else ""))
@@ -775,6 +887,7 @@ def saved_add():
         "year_from": data.get("year_from"),
         "year_to":   data.get("year_to"),
         "max_results": data.get("max_results", MAX_RESULTS_DEFAULT),
+        "strict":    data.get("strict", True),
         "created":   datetime.now().strftime("%Y-%m-%d"),
     }
     # avoid exact duplicates (same name + query)

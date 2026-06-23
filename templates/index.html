@@ -399,6 +399,37 @@
   .search-btn:active { transform: scale(0.97); }
   .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  .search-hint {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    padding-left: 4px;
+    font-size: 0.72rem;
+  }
+  .strict-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .strict-toggle input { accent-color: var(--accent); cursor: pointer; }
+  .strict-label { color: var(--text2); font-weight: bold; }
+  .query-mode {
+    color: var(--text3);
+    transition: color var(--transition);
+  }
+  .query-mode.power { color: var(--accent); font-weight: bold; }
+  .query-mode::before { content: '\25CF '; }
+  .hint-help {
+    color: var(--text3);
+    cursor: help;
+    border-bottom: 1px dotted var(--border2);
+    margin-left: auto;
+  }
+  .hint-help:hover { color: var(--accent); }
+
   .max-results-wrap { display: flex; align-items: center; gap: 8px; }
   .max-results-label { font-size: 0.75rem; color: var(--text3); white-space: nowrap; }
   .max-results-input {
@@ -993,46 +1024,46 @@
 
     <div class="sidebar-section">Databases</div>
     <div class="db-list" id="dbList">
-      <label class="db-item checked" data-db="pubmed">
-        <input type="checkbox" checked> <div class="db-check"></div>
+      <div class="db-item checked" data-db="pubmed">
+        <div class="db-check"></div>
         <span class="db-name">PubMed / MEDLINE</span>
         <span class="db-badge free">Free</span>
-      </label>
-      <label class="db-item checked" data-db="clinicaltrials">
-        <input type="checkbox" checked> <div class="db-check"></div>
+      </div>
+      <div class="db-item checked" data-db="clinicaltrials">
+        <div class="db-check"></div>
         <span class="db-name">ClinicalTrials.gov</span>
         <span class="db-badge free">Free</span>
-      </label>
-      <label class="db-item checked" data-db="arxiv">
-        <input type="checkbox" checked> <div class="db-check"></div>
+      </div>
+      <div class="db-item checked" data-db="arxiv">
+        <div class="db-check"></div>
         <span class="db-name">arXiv</span>
         <span class="db-badge free">Free</span>
-      </label>
-      <label class="db-item checked" data-db="medrxiv">
-        <input type="checkbox" checked> <div class="db-check"></div>
+      </div>
+      <div class="db-item checked" data-db="medrxiv">
+        <div class="db-check"></div>
         <span class="db-name">medRxiv</span>
         <span class="db-badge free">Free</span>
-      </label>
-      <label class="db-item checked" data-db="biorxiv">
-        <input type="checkbox" checked> <div class="db-check"></div>
+      </div>
+      <div class="db-item checked" data-db="biorxiv">
+        <div class="db-check"></div>
         <span class="db-name">bioRxiv</span>
         <span class="db-badge free">Free</span>
-      </label>
-      <label class="db-item" data-db="scopus">
-        <input type="checkbox"> <div class="db-check"></div>
+      </div>
+      <div class="db-item" data-db="scopus">
+        <div class="db-check"></div>
         <span class="db-name">Scopus</span>
         <span class="db-badge">API key</span>
-      </label>
-      <label class="db-item" data-db="wos">
-        <input type="checkbox"> <div class="db-check"></div>
+      </div>
+      <div class="db-item" data-db="wos">
+        <div class="db-check"></div>
         <span class="db-name">Web of Science</span>
         <span class="db-badge">API key</span>
-      </label>
-      <label class="db-item" data-db="cochrane">
-        <input type="checkbox"> <div class="db-check"></div>
+      </div>
+      <div class="db-item" data-db="cochrane">
+        <div class="db-check"></div>
         <span class="db-name">Cochrane Library</span>
         <span class="db-badge">Browser</span>
-      </label>
+      </div>
     </div>
     <button class="select-all-btn" id="selectAllBtn">Select all</button>
 
@@ -1111,6 +1142,22 @@
           <input class="max-results-input" type="number" id="maxResults" value="10" min="1" max="50">
         </div>
         <button class="search-btn" id="searchBtn" onclick="runSearch()">Search</button>
+      </div>
+      <div class="search-hint">
+        <label class="strict-toggle">
+          <input type="checkbox" id="strictToggle" checked>
+          <span class="strict-label">Strict</span>
+        </label>
+        <span id="queryModeHint" class="query-mode">Strict — words must co-occur in title/abstract</span>
+        <span class="hint-help" title="STRICT (default): your words are required together in each paper's title/abstract — tight, on-topic results.
+BROAD (uncheck Strict): PubMed expands terms with synonyms & MeSH — wider, but can drift to tangential papers.
+
+Operators always work and override the toggle:
+  AND OR NOT  (UPPERCASE)
+  &quot;exact phrase&quot;  in quotes
+  term[tiab]  title/abstract  ·  term[mesh]  MeSH
+  author[au]  ·  2020[dp]  by date
+Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax</span>
       </div>
     </div>
 
@@ -1252,22 +1299,50 @@ let lastSearchParams = null;   // for saving searches
 document.querySelectorAll('.db-item').forEach(item => {
   item.addEventListener('click', () => {
     item.classList.toggle('checked');
-    item.querySelector('input').checked = item.classList.contains('checked');
   });
 });
 
 document.getElementById('selectAllBtn').addEventListener('click', () => {
-  const items   = document.querySelectorAll('.db-item');
-  const allOn   = [...items].every(i => i.classList.contains('checked'));
-  items.forEach(i => {
-    if (allOn) { i.classList.remove('checked'); i.querySelector('input').checked = false; }
-    else        { i.classList.add('checked');    i.querySelector('input').checked = true;  }
-  });
+  const items = document.querySelectorAll('.db-item');
+  const allOn = [...items].every(i => i.classList.contains('checked'));
+  items.forEach(i => i.classList.toggle('checked', !allOn));
   document.getElementById('selectAllBtn').textContent = allOn ? 'Select all' : 'Deselect all';
 });
 
 function getSelectedDBs() {
   return [...document.querySelectorAll('.db-item.checked')].map(i => i.dataset.db);
+}
+
+// Live query-mode hint (mirrors backend is_power_query)
+function detectPowerQuery(q) {
+  if (/\b(AND|OR|NOT)\b/.test(q)) return true;
+  if (/\[[a-zA-Z/ ]+\]/.test(q))  return true;
+  if (q.includes('"'))            return true;
+  return false;
+}
+function updateQueryHint() {
+  const hint = document.getElementById('queryModeHint');
+  if (!hint) return;
+  const q = (document.getElementById('searchInput').value || '');
+  const strict = document.getElementById('strictToggle').checked;
+  if (q.trim() && detectPowerQuery(q)) {
+    hint.textContent = 'Advanced query \u2014 operators & tags respected (toggle ignored)';
+    hint.classList.add('power');
+  } else if (strict) {
+    hint.textContent = 'Strict \u2014 words must co-occur in title/abstract';
+    hint.classList.remove('power');
+  } else {
+    hint.textContent = 'Broad \u2014 auto-expanded with synonyms & MeSH';
+    hint.classList.remove('power');
+  }
+}
+const _searchInputEl = document.getElementById('searchInput');
+if (_searchInputEl) {
+  _searchInputEl.addEventListener('input', updateQueryHint);
+}
+const _strictEl = document.getElementById('strictToggle');
+if (_strictEl) {
+  _strictEl.addEventListener('change', updateQueryHint);
 }
 
 // ── Search (progressive streaming) ─────────────────────────────────────────
@@ -1289,6 +1364,7 @@ function runSearch() {
     max_results: parseInt(document.getElementById('maxResults').value) || 10,
     year_from:   document.getElementById('yearFrom').value || null,
     year_to:     document.getElementById('yearTo').value   || null,
+    strict:      document.getElementById('strictToggle').checked,
   };
 
   // Scaffold the results area with header + a live status line
@@ -1708,12 +1784,13 @@ function runSaved(s) {
   document.getElementById('maxResults').value  = s.max_results || 10;
   document.getElementById('yearFrom').value    = s.year_from || '';
   document.getElementById('yearTo').value      = s.year_to   || '';
+  document.getElementById('strictToggle').checked = (s.strict !== false);
+  updateQueryHint();
 
   // Restore database selection
   document.querySelectorAll('.db-item').forEach(item => {
     const on = (s.sources || []).includes(item.dataset.db);
     item.classList.toggle('checked', on);
-    item.querySelector('input').checked = on;
   });
 
   runSearch();
