@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MedSearch — Riccardo Nevoso</title>
+<style>
+  /* ── Reset & Base ───────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0e0f11;
+    --bg2:         #141518;
+    --bg3:         #1c1d21;
+    --bg4:         #242529;
+    --border:      #2a2b30;
+    --border2:     #35363d;
+    --text:        #e8e9ed;
+    --text2:       #9a9ba8;
+    --text3:       #5c5d6b;
+    --accent:      #4f8ef7;
+    --accent2:     #3a6fd4;
+    --green:       #3ecf8e;
+    --yellow:      #f5a623;
+    --red:         #e05c5c;
+    --purple:      #a78bfa;
+    --font:        'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono:        'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    --radius:      8px;
+    --radius2:     12px;
+    --shadow:      0 4px 24px rgba(0,0,0,0.4);
+    --transition:  0.18s ease;
+  }
+
+  html { font-size: 15px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Scrollbar ──────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg2); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* ── Layout ─────────────────────────────────────────────────────────── */
+  .layout { display: flex; height: 100vh; overflow: hidden; }
+
+  /* ── Sidebar ─────────────────────────────────────────────────────────── */
+  .sidebar {
+    width: 260px;
+    min-width: 260px;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .logo {
+    padding: 24px 20px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+  .logo-title span { color: var(--accent); }
+  .logo-sub {
+    font-size: 0.72rem;
+    color: var(--text3);
+    margin-top: 2px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .sidebar-section {
+    padding: 16px 20px 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Databases */
+  .db-list { padding: 0 12px; }
+  .db-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--transition);
+  }
+  .db-item:hover { background: var(--bg3); }
+  .db-item input[type=checkbox] { display: none; }
+  .db-check {
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--border2);
+    border-radius: 4px;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: all var(--transition);
+  }
+  .db-item.checked .db-check {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .db-item.checked .db-check::after {
+    content: '';
+    width: 4px; height: 7px;
+    border: 2px solid white;
+    border-top: none; border-left: none;
+    transform: rotate(45deg) translate(-1px,-1px);
+    display: block;
+  }
+  .db-name { font-size: 0.82rem; color: var(--text2); }
+  .db-item.checked .db-name { color: var(--text); }
+  .db-badge {
+    margin-left: auto;
+    font-size: 0.62rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--bg4);
+    color: var(--text3);
+  }
+  .db-badge.free { background: rgba(62,207,142,0.12); color: var(--green); }
+
+  .select-all-btn {
+    margin: 6px 12px 0;
+    padding: 6px 10px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text3);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    width: calc(100% - 24px);
+  }
+  .select-all-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Filters */
+  .filter-block { padding: 0 20px 12px; }
+  .filter-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .filter-label {
+    font-size: 0.72rem;
+    color: var(--text3);
+    margin-bottom: 4px;
+    display: block;
+  }
+  .filter-input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    outline: none;
+    transition: border-color var(--transition);
+  }
+  .filter-input:focus { border-color: var(--accent); }
+  .filter-input::placeholder { color: var(--text3); }
+
+  /* History */
+  .history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px 12px;
+  }
+  .history-item {
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    font-size: 0.78rem;
+    color: var(--text2);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background var(--transition);
+  }
+  .history-item:hover { background: var(--bg3); color: var(--text); }
+  .history-item::before { content: '↺ '; color: var(--text3); }
+
+  /* Settings btn */
+  .sidebar-bottom {
+    padding: 12px;
+    border-top: 1px solid var(--border);
+  }
+  .settings-btn {
+    width: 100%;
+    padding: 8px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text3);
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .settings-btn:hover { border-color: var(--border2); color: var(--text); }
+
+  /* ── Main area ───────────────────────────────────────────────────────── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Search bar ──────────────────────────────────────────────────────── */
+  .search-bar {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .search-row { display: flex; gap: 10px; align-items: center; }
+  .search-input-wrap { flex: 1; position: relative; }
+  .search-input {
+    width: 100%;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    color: var(--text);
+    font-size: 0.95rem;
+    padding: 12px 48px 12px 18px;
+    outline: none;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    font-family: var(--font);
+  }
+  .search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(79,142,247,0.12);
+  }
+  .search-input::placeholder { color: var(--text3); }
+  .search-icon {
+    position: absolute;
+    right: 14px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--text3);
+    font-size: 1rem;
+    pointer-events: none;
+  }
+  .search-btn {
+    padding: 12px 22px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius2);
+    color: white;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition), transform var(--transition);
+    white-space: nowrap;
+    font-family: var(--font);
+  }
+  .search-btn:hover { background: var(--accent2); }
+  .search-btn:active { transform: scale(0.97); }
+  .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .max-results-wrap { display: flex; align-items: center; gap: 8px; }
+  .max-results-label { font-size: 0.75rem; color: var(--text3); white-space: nowrap; }
+  .max-results-input {
+    width: 52px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.82rem;
+    padding: 6px 8px;
+    outline: none;
+    text-align: center;
+  }
+
+  /* ── Status bar ──────────────────────────────────────────────────────── */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 28px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.75rem;
+    color: var(--text3);
+    min-height: 36px;
+  }
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--text3);
+    flex-shrink: 0;
+  }
+  .status-dot.searching { background: var(--yellow); animation: pulse 1s infinite; }
+  .status-dot.done { background: var(--green); }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .ai-badge {
+    margin-left: auto;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .ai-badge.on  { background: rgba(167,139,250,0.15); color: var(--purple); }
+  .ai-badge.off { background: var(--bg3); color: var(--text3); }
+
+  /* ── Results area ────────────────────────────────────────────────────── */
+  .results-area {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 28px;
+  }
+
+  /* MeSH */
+  .mesh-box {
+    background: rgba(79,142,247,0.07);
+    border: 1px solid rgba(79,142,247,0.2);
+    border-radius: var(--radius2);
+    padding: 12px 16px;
+    margin-bottom: 18px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .mesh-label { font-size: 0.72rem; color: var(--accent); font-weight: 600; }
+  .mesh-tag {
+    background: rgba(79,142,247,0.12);
+    color: var(--accent);
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .mesh-tag:hover { background: rgba(79,142,247,0.25); }
+
+  /* Cochrane banner */
+  .cochrane-banner {
+    background: rgba(245,166,35,0.07);
+    border: 1px solid rgba(245,166,35,0.2);
+    border-radius: var(--radius2);
+    padding: 10px 16px;
+    margin-bottom: 14px;
+    font-size: 0.8rem;
+    color: var(--yellow);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .cochrane-banner a { color: var(--yellow); }
+
+  /* Results header */
+  .results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .results-count {
+    font-size: 0.8rem;
+    color: var(--text3);
+  }
+  .results-count strong { color: var(--text); }
+  .action-row { display: flex; gap: 8px; }
+  .action-btn {
+    padding: 6px 14px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition);
+    font-family: var(--font);
+  }
+  .action-btn:hover { border-color: var(--border2); color: var(--text); }
+  .action-btn.primary { background: rgba(79,142,247,0.1); border-color: rgba(79,142,247,0.3); color: var(--accent); }
+  .action-btn.primary:hover { background: rgba(79,142,247,0.2); }
+
+  /* Source group */
+  .source-group { margin-bottom: 28px; }
+  .source-group-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text3);
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .source-count {
+    background: var(--bg3);
+    color: var(--text3);
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+
+  /* Article card */
+  .article-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+    position: relative;
+  }
+  .article-card:hover {
+    border-color: var(--border2);
+    box-shadow: var(--shadow);
+  }
+
+  .article-title {
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 6px;
+    padding-right: 60px;
+  }
+
+  .article-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+    align-items: center;
+  }
+  .meta-tag {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--bg3);
+    color: var(--text3);
+  }
+  .meta-tag.journal { color: var(--text2); }
+  .meta-tag.year { color: var(--text2); }
+  .meta-tag.q1 { background: rgba(62,207,142,0.12); color: var(--green); }
+  .meta-tag.q2 { background: rgba(79,142,247,0.12); color: var(--accent); }
+  .meta-tag.q3 { background: rgba(245,166,35,0.12); color: var(--yellow); }
+  .meta-tag.cited { color: var(--text3); }
+
+  .article-authors {
+    font-size: 0.75rem;
+    color: var(--text3);
+    margin-bottom: 8px;
+  }
+
+  .article-abstract {
+    font-size: 0.8rem;
+    color: var(--text2);
+    line-height: 1.6;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 10px;
+    transition: all 0.2s;
+  }
+  .article-abstract.expanded {
+    display: block;
+    -webkit-line-clamp: unset;
+  }
+
+  .ai-oneliner {
+    background: rgba(167,139,250,0.08);
+    border-left: 2px solid var(--purple);
+    padding: 6px 12px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    font-size: 0.78rem;
+    color: var(--purple);
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+
+  .article-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+  }
+  .link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all var(--transition);
+    cursor: pointer;
+    border: none;
+    font-family: var(--font);
+  }
+  .link-btn.open-access {
+    background: rgba(62,207,142,0.12);
+    color: var(--green);
+    border: 1px solid rgba(62,207,142,0.2);
+  }
+  .link-btn.open-access:hover { background: rgba(62,207,142,0.22); }
+  .link-btn.doi {
+    background: rgba(79,142,247,0.1);
+    color: var(--accent);
+    border: 1px solid rgba(79,142,247,0.2);
+  }
+  .link-btn.doi:hover { background: rgba(79,142,247,0.2); }
+  .link-btn.scihub {
+    background: rgba(245,166,35,0.1);
+    color: var(--yellow);
+    border: 1px solid rgba(245,166,35,0.2);
+  }
+  .link-btn.scihub:hover { background: rgba(245,166,35,0.2); }
+  .link-btn.explain-btn {
+    background: rgba(167,139,250,0.1);
+    color: var(--purple);
+    border: 1px solid rgba(167,139,250,0.2);
+    margin-left: auto;
+  }
+  .link-btn.explain-btn:hover { background: rgba(167,139,250,0.2); }
+
+  .expand-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 4px;
+    transition: color var(--transition);
+  }
+  .expand-btn:hover { color: var(--text); }
+
+  /* ── Synthesis panel ─────────────────────────────────────────────────── */
+  .synthesis-panel {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 0;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease, padding 0.3s ease;
+  }
+  .synthesis-panel.open {
+    max-height: 600px;
+    padding: 20px 28px;
+    overflow-y: auto;
+  }
+  .synthesis-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .synthesis-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--purple);
+  }
+  .synthesis-close {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: color var(--transition);
+  }
+  .synthesis-close:hover { color: var(--text); }
+  .synthesis-text {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.75;
+    white-space: pre-wrap;
+  }
+
+  /* ── Explain modal ───────────────────────────────────────────────────── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 720px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .modal-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .modal-title {
+    flex: 1;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+  }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 1.2rem;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 2px;
+    transition: color var(--transition);
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .modal-text {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.8;
+    white-space: pre-wrap;
+  }
+
+  /* ── Settings modal ──────────────────────────────────────────────────── */
+  .settings-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 540px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+  }
+  .settings-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .settings-title { font-size: 0.9rem; font-weight: 600; }
+  .settings-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .settings-field label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text3);
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .settings-field input {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.82rem;
+    padding: 8px 12px;
+    outline: none;
+    font-family: var(--mono);
+    transition: border-color var(--transition);
+  }
+  .settings-field input:focus { border-color: var(--accent); }
+  .settings-field input::placeholder { color: var(--text3); font-family: var(--font); }
+  .settings-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .btn-primary {
+    padding: 8px 18px;
+    background: var(--accent);
+    border: none;
+    border-radius: var(--radius);
+    color: white;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background var(--transition);
+  }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-secondary {
+    padding: 8px 18px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-size: 0.82rem;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all var(--transition);
+  }
+  .btn-secondary:hover { border-color: var(--border2); color: var(--text); }
+
+  /* Export modal */
+  .export-options { display: flex; flex-direction: column; gap: 10px; padding: 20px; }
+  .export-opt {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: border-color var(--transition);
+  }
+  .export-opt:hover { border-color: var(--border2); }
+  .export-opt input[type=radio] { accent-color: var(--accent); }
+  .export-opt-label { font-size: 0.83rem; }
+  .export-opt-sub { font-size: 0.72rem; color: var(--text3); }
+  .export-success {
+    padding: 14px 20px;
+    font-size: 0.8rem;
+    color: var(--green);
+    background: rgba(62,207,142,0.07);
+    border-top: 1px solid var(--border);
+    border-radius: 0 0 var(--radius2) var(--radius2);
+  }
+
+  /* ── Empty / loading states ──────────────────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text3);
+    text-align: center;
+  }
+  .empty-icon { font-size: 2.5rem; opacity: 0.4; }
+  .empty-title { font-size: 0.95rem; color: var(--text2); }
+  .empty-sub { font-size: 0.8rem; max-width: 320px; line-height: 1.6; }
+
+  .loading-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    padding: 18px 20px;
+    margin-bottom: 10px;
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0%   { opacity: 1; }
+    50%  { opacity: 0.5; }
+    100% { opacity: 1; }
+  }
+  .loading-line {
+    height: 12px;
+    background: var(--bg3);
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+  .loading-line.short { width: 40%; }
+  .loading-line.med   { width: 70%; }
+
+  /* toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    font-size: 0.8rem;
+    color: var(--text);
+    z-index: 2000;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.25s ease;
+    max-width: 320px;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.green { border-color: rgba(62,207,142,0.4); color: var(--green); }
+  .toast.red   { border-color: rgba(224,92,92,0.4);  color: var(--red); }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-title">Med<span>Search</span></div>
+      <div class="logo-sub">Riccardo Nevoso · v4.0</div>
+    </div>
+
+    <div class="sidebar-section">Databases</div>
+    <div class="db-list" id="dbList">
+      <label class="db-item checked" data-db="pubmed">
+        <input type="checkbox" checked> <div class="db-check"></div>
+        <span class="db-name">PubMed / MEDLINE</span>
+        <span class="db-badge free">Free</span>
+      </label>
+      <label class="db-item checked" data-db="clinicaltrials">
+        <input type="checkbox" checked> <div class="db-check"></div>
+        <span class="db-name">ClinicalTrials.gov</span>
+        <span class="db-badge free">Free</span>
+      </label>
+      <label class="db-item checked" data-db="arxiv">
+        <input type="checkbox" checked> <div class="db-check"></div>
+        <span class="db-name">arXiv</span>
+        <span class="db-badge free">Free</span>
+      </label>
+      <label class="db-item checked" data-db="medrxiv">
+        <input type="checkbox" checked> <div class="db-check"></div>
+        <span class="db-name">medRxiv</span>
+        <span class="db-badge free">Free</span>
+      </label>
+      <label class="db-item checked" data-db="biorxiv">
+        <input type="checkbox" checked> <div class="db-check"></div>
+        <span class="db-name">bioRxiv</span>
+        <span class="db-badge free">Free</span>
+      </label>
+      <label class="db-item" data-db="scopus">
+        <input type="checkbox"> <div class="db-check"></div>
+        <span class="db-name">Scopus</span>
+        <span class="db-badge">API key</span>
+      </label>
+      <label class="db-item" data-db="wos">
+        <input type="checkbox"> <div class="db-check"></div>
+        <span class="db-name">Web of Science</span>
+        <span class="db-badge">API key</span>
+      </label>
+      <label class="db-item" data-db="cochrane">
+        <input type="checkbox"> <div class="db-check"></div>
+        <span class="db-name">Cochrane Library</span>
+        <span class="db-badge">Browser</span>
+      </label>
+    </div>
+    <button class="select-all-btn" id="selectAllBtn">Select all</button>
+
+    <div class="sidebar-section" style="margin-top:14px">Filters</div>
+    <div class="filter-block">
+      <div class="filter-row">
+        <div style="flex:1">
+          <span class="filter-label">From year</span>
+          <input class="filter-input" type="number" id="yearFrom" placeholder="e.g. 2018" min="1900" max="2099">
+        </div>
+        <div style="flex:1">
+          <span class="filter-label">To year</span>
+          <input class="filter-input" type="number" id="yearTo" placeholder="e.g. 2024" min="1900" max="2099">
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">Recent searches</div>
+    <div class="history-list" id="historyList">
+      {% for q in history %}
+      <div class="history-item" onclick="reuseQuery('{{ q }}')">{{ q }}</div>
+      {% endfor %}
+    </div>
+
+    <div class="sidebar-bottom">
+      <button class="settings-btn" onclick="openSettings()">⚙ Settings &amp; API keys</button>
+    </div>
+  </aside>
+
+  <!-- ── Main ────────────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Search bar -->
+    <div class="search-bar">
+      <div class="search-row">
+        <div class="search-input-wrap">
+          <input class="search-input" type="text" id="searchInput"
+                 placeholder="e.g. glioblastoma temozolomide blood-brain barrier…"
+                 onkeydown="if(event.key==='Enter') runSearch()">
+          <span class="search-icon">⌕</span>
+        </div>
+        <div class="max-results-wrap">
+          <span class="max-results-label">Max results</span>
+          <input class="max-results-input" type="number" id="maxResults" value="10" min="1" max="50">
+        </div>
+        <button class="search-btn" id="searchBtn" onclick="runSearch()">Search</button>
+      </div>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Ready — select databases and enter a query</span>
+      <span class="ai-badge {{ 'on' if ai_on else 'off' }}">
+        {{ '✦ AI on' if ai_on else '○ AI off' }}
+      </span>
+    </div>
+
+    <!-- Results -->
+    <div class="results-area" id="resultsArea">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">🔬</div>
+        <div class="empty-title">Start a literature search</div>
+        <div class="empty-sub">Select databases on the left, enter your query above, and press Search.</div>
+      </div>
+    </div>
+
+    <!-- Synthesis panel -->
+    <div class="synthesis-panel" id="synthesisPanel">
+      <div class="synthesis-header">
+        <span class="synthesis-title">✦ AI Research Synthesis</span>
+        <button class="synthesis-close" onclick="closeSynthesis()">✕</button>
+      </div>
+      <div class="synthesis-text" id="synthesisText"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Explain modal ────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="explainOverlay" onclick="if(event.target===this)closeExplain()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="explainTitle"></div>
+      <button class="modal-close" onclick="closeExplain()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-text" id="explainText">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings modal ───────────────────────────────────────────────── -->
+<div class="modal-overlay" id="settingsOverlay" onclick="if(event.target===this)closeSettings()">
+  <div class="settings-modal">
+    <div class="settings-header">
+      <span class="settings-title">⚙ Settings &amp; API Keys</span>
+      <button class="modal-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-field">
+        <label>Anthropic API key (AI summaries &amp; synthesis)</label>
+        <input type="password" id="set_anthropic" placeholder="sk-ant-… (get at console.anthropic.com)">
+      </div>
+      <div class="settings-field">
+        <label>NCBI / PubMed API key (optional — higher rate limits)</label>
+        <input type="password" id="set_pubmed" placeholder="get free at ncbi.nlm.nih.gov/account">
+      </div>
+      <div class="settings-field">
+        <label>Scopus API key</label>
+        <input type="password" id="set_scopus" placeholder="get free at dev.elsevier.com">
+      </div>
+      <div class="settings-field">
+        <label>Web of Science API key</label>
+        <input type="password" id="set_wos" placeholder="apply at developer.clarivate.com">
+      </div>
+      <div class="settings-field">
+        <label>Email for Unpaywall (open-access lookup)</label>
+        <input type="email" id="set_email" placeholder="your@email.com">
+      </div>
+    </div>
+    <div class="settings-footer">
+      <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
+      <button class="btn-primary" onclick="saveSettings()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Export modal ─────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="exportOverlay" onclick="if(event.target===this)closeExport()">
+  <div class="settings-modal">
+    <div class="settings-header">
+      <span class="settings-title">💾 Export Results</span>
+      <button class="modal-close" onclick="closeExport()">✕</button>
+    </div>
+    <div class="export-options">
+      <label class="export-opt">
+        <input type="radio" name="exportFmt" value="md" checked>
+        <div>
+          <div class="export-opt-label">Markdown report (.md)</div>
+          <div class="export-opt-sub">Readable report with all articles, abstracts and AI summary</div>
+        </div>
+      </label>
+      <label class="export-opt">
+        <input type="radio" name="exportFmt" value="bib">
+        <div>
+          <div class="export-opt-label">BibTeX (.bib)</div>
+          <div class="export-opt-sub">Import directly into Zotero, Mendeley, LaTeX</div>
+        </div>
+      </label>
+      <label class="export-opt">
+        <input type="radio" name="exportFmt" value="ris">
+        <div>
+          <div class="export-opt-label">RIS (.ris)</div>
+          <div class="export-opt-sub">Compatible with Zotero, EndNote, RefWorks</div>
+        </div>
+      </label>
+      <label class="export-opt">
+        <input type="radio" name="exportFmt" value="all">
+        <div>
+          <div class="export-opt-label">All three formats</div>
+          <div class="export-opt-sub">Saved to ~/medsearch_exports/</div>
+        </div>
+      </label>
+    </div>
+    <div class="settings-footer">
+      <button class="btn-secondary" onclick="closeExport()">Cancel</button>
+      <button class="btn-primary" onclick="doExport()">Export</button>
+    </div>
+    <div class="export-success" id="exportSuccess" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ── Toast ─────────────────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+let allArticles    = [];
+let synthesisOpen  = false;
+let searchRunning  = false;
+
+// ── DB checkboxes ─────────────────────────────────────────────────────────
+document.querySelectorAll('.db-item').forEach(item => {
+  item.addEventListener('click', () => {
+    item.classList.toggle('checked');
+    item.querySelector('input').checked = item.classList.contains('checked');
+  });
+});
+
+document.getElementById('selectAllBtn').addEventListener('click', () => {
+  const items   = document.querySelectorAll('.db-item');
+  const allOn   = [...items].every(i => i.classList.contains('checked'));
+  items.forEach(i => {
+    if (allOn) { i.classList.remove('checked'); i.querySelector('input').checked = false; }
+    else        { i.classList.add('checked');    i.querySelector('input').checked = true;  }
+  });
+  document.getElementById('selectAllBtn').textContent = allOn ? 'Select all' : 'Deselect all';
+});
+
+function getSelectedDBs() {
+  return [...document.querySelectorAll('.db-item.checked')].map(i => i.dataset.db);
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+async function runSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  const dbs   = getSelectedDBs();
+  if (!query) { showToast('Please enter a search query.', 'red'); return; }
+  if (!dbs.length) { showToast('Please select at least one database.', 'red'); return; }
+  if (searchRunning) return;
+
+  searchRunning = true;
+  setStatus('searching', `Searching ${dbs.length} database(s)…`);
+  document.getElementById('searchBtn').disabled = true;
+
+  // clear
+  allArticles = [];
+  closeSynthesis();
+  showLoadingCards();
+
+  try {
+    const res  = await fetch('/search', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        query,
+        sources:     dbs,
+        max_results: parseInt(document.getElementById('maxResults').value) || 10,
+        year_from:   document.getElementById('yearFrom').value || null,
+        year_to:     document.getElementById('yearTo').value   || null,
+      })
+    });
+    const data = await res.json();
+    if (data.error) { setStatus('error', data.error); showToast(data.error,'red'); return; }
+
+    allArticles = data.articles;
+    renderResults(data);
+    updateHistory(query);
+    setStatus('done', `Found ${data.count} unique article(s)` +
+      (data.total_pubmed ? ` · PubMed total: ${data.total_pubmed}` : ''));
+  } catch(e) {
+    setStatus('error', 'Search failed: ' + e.message);
+    showToast('Search error: ' + e.message, 'red');
+  } finally {
+    searchRunning = false;
+    document.getElementById('searchBtn').disabled = false;
+  }
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderResults(data) {
+  const area = document.getElementById('resultsArea');
+  area.innerHTML = '';
+
+  // MeSH
+  if (data.mesh && data.mesh.length) {
+    const box = document.createElement('div');
+    box.className = 'mesh-box';
+    box.innerHTML = '<span class="mesh-label">💡 MeSH</span>' +
+      data.mesh.map(m => `<span class="mesh-tag" onclick="useMesh('${m.text}')">${m.text}</span>`).join('');
+    area.appendChild(box);
+  }
+
+  // Cochrane banner
+  if (data.cochrane_link) {
+    const banner = document.createElement('div');
+    banner.className = 'cochrane-banner';
+    banner.innerHTML = `🩺 <strong>Cochrane Library:</strong> No public API — 
+      <a href="${data.cochrane_link}" target="_blank">open search in browser ↗</a>`;
+    area.appendChild(banner);
+  }
+
+  if (!data.articles.length) {
+    area.innerHTML += `<div class="empty-state">
+      <div class="empty-icon">🔍</div>
+      <div class="empty-title">No results found</div>
+      <div class="empty-sub">Try different keywords or expand the date range.</div>
+    </div>`;
+    return;
+  }
+
+  // Results header
+  const header = document.createElement('div');
+  header.className = 'results-header';
+  header.innerHTML = `
+    <div class="results-count"><strong>${data.count}</strong> unique articles found</div>
+    <div class="action-row">
+      <button class="action-btn primary" onclick="openSynthesis()">✦ AI Synthesis</button>
+      <button class="action-btn" onclick="openExport()">↓ Export</button>
+    </div>`;
+  area.appendChild(header);
+
+  // Group by source
+  const groups = {};
+  data.articles.forEach((a,i) => {
+    if (!groups[a.source]) groups[a.source] = [];
+    groups[a.source].push({...a, _idx: i});
+  });
+
+  Object.entries(groups).forEach(([source, arts]) => {
+    const grp = document.createElement('div');
+    grp.className = 'source-group';
+    grp.innerHTML = `<div class="source-group-title">
+      ${sourceIcon(source)} ${source}
+      <span class="source-count">${arts.length}</span>
+    </div>`;
+    arts.forEach(a => grp.appendChild(makeCard(a)));
+    area.appendChild(grp);
+  });
+}
+
+function sourceIcon(s) {
+  const icons = {
+    'PubMed':'🧬','arXiv':'📐','ClinicalTrials':'⚕️',
+    'medRxiv':'🏥','bioRxiv':'🧫','Scopus':'📊','Web of Science':'🌐'
+  };
+  return icons[s] || '📄';
+}
+
+function makeCard(a) {
+  const card = document.createElement('div');
+  card.className = 'article-card';
+
+  const qClass = a.quartile ? `q${a.quartile[1].toLowerCase()}` : '';
+  const qTag   = a.quartile ? `<span class="meta-tag ${qClass}">${a.quartile}</span>` : '';
+  const cited  = a.cited_by ? `<span class="meta-tag cited">Cited: ${a.cited_by}</span>` : '';
+
+  let links = '';
+  if (a.access_kind === 'open' && a.access_link)
+    links += `<a class="link-btn open-access" href="${a.access_link}" target="_blank">⬤ Free PDF</a>`;
+  if (a.access_kind === 'doi' && a.access_link)
+    links += `<a class="link-btn doi" href="${a.access_link}" target="_blank">⬤ DOI</a>`;
+  if (a.scihub)
+    links += `<a class="link-btn scihub" href="${a.scihub}" target="_blank">Sci-Hub</a>`;
+  if (a.pmid)
+    links += `<a class="link-btn doi" href="https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/" target="_blank">PubMed</a>`;
+  if (a.nct_id)
+    links += `<a class="link-btn doi" href="https://clinicaltrials.gov/study/${a.nct_id}" target="_blank">ClinicalTrials</a>`;
+
+  const explainBtn = `<button class="link-btn explain-btn" onclick="openExplain(${a._idx})">✦ Explain</button>`;
+
+  const abstract = a.abstract || '';
+  const oneliner = a.oneliner
+    ? `<div class="ai-oneliner">✦ ${a.oneliner}</div>` : '';
+
+  card.innerHTML = `
+    <div class="article-title">${escHtml(a.title)}</div>
+    <div class="article-meta">
+      ${a.journal ? `<span class="meta-tag journal">${escHtml(a.journal)}</span>` : ''}
+      ${a.year    ? `<span class="meta-tag year">${a.year}</span>` : ''}
+      ${qTag} ${cited}
+    </div>
+    ${a.authors ? `<div class="article-authors">${escHtml(a.authors)}</div>` : ''}
+    ${oneliner}
+    ${abstract ? `
+      <div class="article-abstract" id="abs_${a._idx}">${escHtml(abstract)}</div>
+      <button class="expand-btn" id="expbtn_${a._idx}"
+        onclick="toggleAbstract(${a._idx})">Show more ▾</button>` : ''}
+    <div class="article-links">${links} ${explainBtn}</div>`;
+  return card;
+}
+
+function toggleAbstract(idx) {
+  const el  = document.getElementById('abs_'    + idx);
+  const btn = document.getElementById('expbtn_' + idx);
+  el.classList.toggle('expanded');
+  btn.textContent = el.classList.contains('expanded') ? 'Show less ▴' : 'Show more ▾';
+}
+
+// ── AI Synthesis ───────────────────────────────────────────────────────────
+function openSynthesis() {
+  if (!allArticles.length) { showToast('Run a search first.', 'red'); return; }
+  const panel = document.getElementById('synthesisPanel');
+  const text  = document.getElementById('synthesisText');
+  panel.classList.add('open');
+  text.textContent = '';
+  synthesisOpen = true;
+
+  const es = new EventSource('/synthesis');
+  es.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'chunk') { text.textContent += d.text; }
+    if (d.type === 'done')  { es.close(); }
+    if (d.type === 'error') { text.textContent = 'Error: ' + d.text; es.close(); }
+    document.getElementById('synthesisPanel').scrollTop = 9999;
+  };
+  es.onerror = () => es.close();
+}
+
+function closeSynthesis() {
+  document.getElementById('synthesisPanel').classList.remove('open');
+  synthesisOpen = false;
+}
+
+// ── Explain ────────────────────────────────────────────────────────────────
+function openExplain(idx) {
+  const a = allArticles[idx];
+  if (!a) return;
+  document.getElementById('explainTitle').textContent = a.title;
+  document.getElementById('explainText').textContent  = '';
+  document.getElementById('explainOverlay').classList.add('open');
+
+  const es = new EventSource('/explain/' + idx);
+  es.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'chunk') { document.getElementById('explainText').textContent += d.text; }
+    if (d.type === 'done')  { es.close(); }
+    if (d.type === 'error') { document.getElementById('explainText').textContent = 'Error: '+d.text; es.close(); }
+  };
+  es.onerror = () => es.close();
+}
+
+function closeExplain() {
+  document.getElementById('explainOverlay').classList.remove('open');
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────
+function openExport() {
+  if (!allArticles.length) { showToast('No articles to export.', 'red'); return; }
+  document.getElementById('exportSuccess').style.display = 'none';
+  document.getElementById('exportOverlay').classList.add('open');
+}
+function closeExport() {
+  document.getElementById('exportOverlay').classList.remove('open');
+}
+async function doExport() {
+  const fmt = document.querySelector('input[name=exportFmt]:checked').value;
+  const res  = await fetch('/export', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({format: fmt})
+  });
+  const data = await res.json();
+  if (data.error) { showToast(data.error, 'red'); return; }
+  const succ = document.getElementById('exportSuccess');
+  succ.style.display = 'block';
+  succ.textContent   = '✓ Saved to: ' + data.paths.join(', ');
+  showToast('Export complete!', 'green');
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('settingsOverlay').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('settingsOverlay').classList.remove('open');
+}
+async function saveSettings() {
+  const payload = {
+    anthropic_api_key: document.getElementById('set_anthropic').value,
+    pubmed_api_key:    document.getElementById('set_pubmed').value,
+    scopus_api_key:    document.getElementById('set_scopus').value,
+    wos_api_key:       document.getElementById('set_wos').value,
+    unpaywall_email:   document.getElementById('set_email').value,
+  };
+  await fetch('/settings', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  closeSettings();
+  showToast('Settings saved — restart the app to apply API key changes.', 'green');
+}
+
+// ── History ────────────────────────────────────────────────────────────────
+function reuseQuery(q) {
+  document.getElementById('searchInput').value = q;
+  runSearch();
+}
+function updateHistory(q) {
+  const list = document.getElementById('historyList');
+  if (![...list.querySelectorAll('.history-item')].some(i => i.textContent.includes(q))) {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.textContent = q;
+    item.onclick = () => reuseQuery(q);
+    list.prepend(item);
+  }
+}
+
+// ── MeSH ──────────────────────────────────────────────────────────────────
+function useMesh(term) {
+  document.getElementById('searchInput').value = term;
+  showToast('Query set to MeSH term. Press Search to run.', '');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setStatus(state, text) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + (state === 'idle' ? '' : state);
+  document.getElementById('statusText').textContent = text;
+}
+
+function showLoadingCards() {
+  const area = document.getElementById('resultsArea');
+  area.innerHTML = [1,2,3].map(() => `
+    <div class="loading-card">
+      <div class="loading-line med"></div>
+      <div class="loading-line short"></div>
+      <div class="loading-line" style="width:90%"></div>
+    </div>`).join('');
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className   = 'toast show' + (type ? ' '+type : '');
+  setTimeout(() => t.className = 'toast', 3500);
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Keyboard shortcut ──────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    document.getElementById('searchInput').focus();
+  }
+  if (e.key === 'Escape') {
+    closeExplain(); closeSettings(); closeExport(); closeSynthesis();
+  }
+});
+</script>
+</body>
+</html>
