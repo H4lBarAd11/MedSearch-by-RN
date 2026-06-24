@@ -57,6 +57,29 @@ CONFIG = load_config()
 TIMEOUT = 15
 MAX_RESULTS_DEFAULT = 10
 
+# ── Auto-update configuration ──────────────────────────────────────────────
+APP_DIR_PATH    = Path(__file__).parent.resolve()
+VERSION_FILE    = APP_DIR_PATH / "VERSION"
+# Raw GitHub URL for the VERSION file on the main branch
+GITHUB_RAW_VERSION = "https://raw.githubusercontent.com/H4lBarAd11/MedSearch-by-RN/main/VERSION"
+
+def get_local_version():
+    try:
+        return VERSION_FILE.read_text().strip()
+    except Exception:
+        return "0.0.0"
+
+def _version_tuple(v):
+    """Parse 'x.y.z' into a comparable tuple; non-numeric parts → 0."""
+    parts = []
+    for p in str(v).strip().split("."):
+        try: parts.append(int(p))
+        except: parts.append(0)
+    while len(parts) < 3: parts.append(0)
+    return tuple(parts[:3])
+
+LOCAL_VERSION = get_local_version()
+
 JOURNAL_QUARTILES = {
     "nature":"Q1","science":"Q1","cell":"Q1","the lancet":"Q1","lancet":"Q1",
     "new england journal of medicine":"Q1","nejm":"Q1","jama":"Q1",
@@ -275,6 +298,90 @@ def get_mesh(query):
                         suggestions.append({"type":"mesh","text":t.text})
                 except: pass
     return suggestions
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CITATION GRAPH  (OpenCitations COCI API + Crossref title resolution)
+# ══════════════════════════════════════════════════════════════════════════════
+
+import concurrent.futures
+
+def _crossref_meta(doi):
+    """Resolve a DOI to {title, year, authors} via Crossref. Returns None on failure."""
+    if not doi: return None
+    url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
+    data, status = fetch_json(url, headers={"User-Agent":"MedSearch/4.0 (research; mailto:research@example.com)"})
+    if not data or status != 200:
+        return None
+    msg = data.get("message", {})
+    title_list = msg.get("title", [])
+    title = title_list[0] if title_list else "(title unavailable)"
+    # Year
+    year = ""
+    for key in ("published-print","published-online","issued","created"):
+        parts = msg.get(key, {}).get("date-parts", [[]])
+        if parts and parts[0]:
+            year = str(parts[0][0]); break
+    # Authors (first 2)
+    authors = []
+    for a in msg.get("author", [])[:2]:
+        fam = a.get("family",""); given = a.get("given","")
+        if fam:
+            authors.append(f"{fam}{' '+given[0]+'.' if given else ''}")
+    n = len(msg.get("author", []))
+    author_str = "; ".join(authors) + (" et al." if n > 2 else "")
+    journal = (msg.get("container-title") or [""])[0]
+    return {"doi": doi, "title": title, "year": year,
+            "authors": author_str, "journal": journal}
+
+def _resolve_dois(dois, limit=12):
+    """Resolve up to `limit` DOIs to metadata, in parallel for speed."""
+    dois = [d for d in dois if d][:limit]
+    out = []
+    if not dois: return out
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = {ex.submit(_crossref_meta, d): d for d in dois}
+        for fut in concurrent.futures.as_completed(futures):
+            try:
+                meta = fut.result()
+                if meta: out.append(meta)
+            except Exception:
+                pass
+    return out
+
+def get_citation_graph(doi, cap=12):
+    """
+    Returns {references:[...], citations:[...], counts:{...}} for a DOI.
+    references = works this paper cites; citations = works citing this paper.
+    Titles resolved via Crossref (capped for speed).
+    """
+    base = "https://opencitations.net/index/coci/api/v1"
+    result = {"references": [], "citations": [],
+              "ref_total": 0, "cit_total": 0, "doi": doi}
+    if not doi:
+        return result
+
+    # References (outgoing — what this cites)
+    ref_data, _ = fetch_json(f"{base}/references/{urllib.parse.quote(doi)}",
+                             headers={"User-Agent":"MedSearch/4.0"})
+    ref_dois = []
+    if isinstance(ref_data, list):
+        result["ref_total"] = len(ref_data)
+        ref_dois = [r.get("cited","").replace("coci =>","").strip() for r in ref_data]
+        ref_dois = [d for d in ref_dois if d]
+
+    # Citations (incoming — what cites this)
+    cit_data, _ = fetch_json(f"{base}/citations/{urllib.parse.quote(doi)}",
+                             headers={"User-Agent":"MedSearch/4.0"})
+    cit_dois = []
+    if isinstance(cit_data, list):
+        result["cit_total"] = len(cit_data)
+        cit_dois = [r.get("citing","").replace("coci =>","").strip() for r in cit_data]
+        cit_dois = [d for d in cit_dois if d]
+
+    # Resolve titles (capped)
+    result["references"] = _resolve_dois(ref_dois, limit=cap)
+    result["citations"]  = _resolve_dois(cit_dois, limit=cap)
+    return result
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  SEARCH FUNCTIONS  (return list of article dicts, no printing)
@@ -653,7 +760,66 @@ def index():
     return render_template("index.html",
                            ai_on=bool(CONFIG.get("anthropic_api_key")),
                            history=SESSION["history"][-10:],
-                           saved=load_saved())
+                           saved=load_saved(),
+                           show_onboarding=not CONFIG.get("onboarding_seen", False))
+
+@app.route("/onboarding/dismiss", methods=["POST"])
+def onboarding_dismiss():
+    CONFIG["onboarding_seen"] = True
+    save_config(CONFIG)
+    return jsonify({"ok": True})
+
+# ── Auto-update routes ─────────────────────────────────────────────────────
+
+@app.route("/update/check")
+def update_check():
+    """Compare local VERSION with the one on GitHub. No git needed for the check."""
+    local = get_local_version()
+    body, status = http_get(GITHUB_RAW_VERSION, timeout=8)
+    if not body:
+        return jsonify({"ok": False, "reason": "offline",
+                        "local": local})
+    remote = body.strip()
+    update_available = _version_tuple(remote) > _version_tuple(local)
+    # Is this a git checkout? (update can only be applied if so)
+    is_git = (APP_DIR_PATH / ".git").exists()
+    return jsonify({
+        "ok": True,
+        "local": local,
+        "remote": remote,
+        "update_available": update_available,
+        "can_apply": is_git,
+    })
+
+@app.route("/update/apply", methods=["POST"])
+def update_apply():
+    """Run `git pull` to fetch the latest version, then signal restart needed."""
+    if not (APP_DIR_PATH / ".git").exists():
+        return jsonify({"ok": False,
+                        "message": "This copy isn't a git checkout, so it can't auto-update. "
+                                   "Please re-clone from GitHub."}), 200
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", str(APP_DIR_PATH), "pull", "--ff-only"],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            new_version = get_local_version()
+            return jsonify({"ok": True,
+                            "output": result.stdout.strip()[-400:],
+                            "new_version": new_version})
+        else:
+            return jsonify({"ok": False,
+                            "message": "git pull failed. You may have local changes.",
+                            "error": (result.stderr or result.stdout).strip()[-400:]}), 200
+    except subprocess.TimeoutExpired:
+        return jsonify({"ok": False, "message": "Update timed out."}), 200
+    except FileNotFoundError:
+        return jsonify({"ok": False,
+                        "message": "git is not installed, so auto-update isn't available."}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "message": f"Update error: {e}"}), 200
 
 @app.route("/search", methods=["POST"])
 def search():
@@ -823,6 +989,22 @@ def explain(idx):
     return Response(stream_with_context(ai_explain_stream(articles[idx])),
                     mimetype="text/event-stream",
                     headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+@app.route("/citations/<int:idx>")
+def citations(idx):
+    articles = SESSION.get("articles",[])
+    if idx < 0 or idx >= len(articles):
+        return jsonify({"error":"Invalid index"}), 400
+    art = articles[idx]
+    doi = art.get("doi")
+    if not doi:
+        return jsonify({"error":"no_doi",
+                        "message":"This article has no DOI, so its citation graph can't be retrieved.",
+                        "title": art.get("title","")}), 200
+    graph = get_citation_graph(doi)
+    graph["source_title"] = art.get("title","")
+    graph["source_year"]  = art.get("year","")
+    return jsonify(graph)
 
 @app.route("/export", methods=["POST"])
 def export():

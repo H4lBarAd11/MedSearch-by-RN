@@ -717,13 +717,20 @@
     border: 1px solid var(--yellow-tint2);
   }
   .link-btn.scihub:hover { background: var(--yellow-tint2); }
+  .link-btn.cite-btn {
+    background: var(--green-tint);
+    color: var(--green);
+    border: 1px solid var(--green-tint2);
+    margin-left: auto;
+  }
+  .link-btn.cite-btn:hover { background: var(--green-tint2); }
   .link-btn.explain-btn {
     background: var(--purple-tint);
     color: var(--purple);
     border: 1px solid var(--purple-tint2);
-    margin-left: auto;
   }
   .link-btn.explain-btn:hover { background: var(--purple-tint2); }
+  .link-btn.push-right { margin-left: auto; }
 
   .expand-btn {
     background: none;
@@ -838,6 +845,143 @@
     color: var(--text2);
     line-height: 1.8;
     white-space: pre-wrap;
+  }
+
+  /* ── Citation graph modal ────────────────────────────────────────────── */
+  .modal-wide { max-width: 920px; }
+  .cite-loading {
+    text-align: center;
+    color: var(--text3);
+    padding: 40px 0;
+    font-size: 0.85rem;
+  }
+  .cite-loading::before {
+    content: '';
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  /* SVG graph area */
+  .cite-graph-wrap {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius2);
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .cite-graph-svg { display: block; width: 100%; height: 280px; }
+  .cite-node-center { fill: var(--accent); }
+  .cite-node-ref    { fill: var(--green); }
+  .cite-node-cit    { fill: var(--purple); }
+  .cite-link { stroke: var(--border2); stroke-width: 1.5; }
+  .cite-node-label {
+    font-family: var(--font);
+    font-size: 9px;
+    fill: var(--text2);
+  }
+  .cite-axis-label {
+    font-family: var(--font);
+    font-size: 11px;
+    font-weight: bold;
+    fill: var(--text3);
+    letter-spacing: 0.05em;
+  }
+  .cite-legend {
+    display: flex;
+    gap: 18px;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--text3);
+    flex-wrap: wrap;
+  }
+  .cite-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+  .cite-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .cite-dot.center { background: var(--accent); }
+  .cite-dot.ref    { background: var(--green); }
+  .cite-dot.cit    { background: var(--purple); }
+
+  /* Lists */
+  .cite-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 680px) { .cite-columns { grid-template-columns: 1fr; } }
+  .cite-col-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .cite-col-title.refs { color: var(--green); }
+  .cite-col-title.cits { color: var(--purple); }
+  .cite-col-count {
+    font-size: 0.65rem;
+    background: var(--bg3);
+    color: var(--text3);
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-weight: 400;
+  }
+  .cite-item {
+    padding: 9px 11px;
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+    background: var(--bg3);
+    border: 1px solid transparent;
+    transition: border-color var(--transition);
+  }
+  .cite-item:hover { border-color: var(--border2); }
+  .cite-item-title {
+    font-size: 0.78rem;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 3px;
+  }
+  .cite-item-meta {
+    font-size: 0.68rem;
+    color: var(--text3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cite-item-meta a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .cite-item-meta a:hover { text-decoration: underline; }
+  .cite-empty-col {
+    font-size: 0.75rem;
+    color: var(--text3);
+    font-style: italic;
+    padding: 8px 0;
+  }
+  .cite-note {
+    font-size: 0.72rem;
+    color: var(--text3);
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+  .cite-error {
+    text-align: center;
+    color: var(--yellow);
+    padding: 30px 20px;
+    font-size: 0.85rem;
   }
 
   /* ── Settings modal ──────────────────────────────────────────────────── */
@@ -975,6 +1119,190 @@
   .loading-line.short { width: 40%; }
   .loading-line.med   { width: 70%; }
 
+  /* ── Onboarding modal ──────────────────────────────────────────────── */
+  .onboard-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 560px;
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
+    overflow: hidden;
+  }
+  .onboard-lang {
+    display: flex;
+    gap: 8px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    justify-content: flex-end;
+  }
+  .lang-btn {
+    padding: 5px 14px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text3);
+    font-family: var(--font);
+    font-size: 0.76rem;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .lang-btn:hover { border-color: var(--border2); color: var(--text2); }
+  .lang-btn.active {
+    background: var(--accent-tint);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: bold;
+  }
+  .onboard-body {
+    padding: 24px 26px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  .onboard-welcome {
+    font-size: 1.4rem;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .onboard-welcome .accent { color: var(--accent); }
+  .onboard-purpose {
+    font-size: 0.85rem;
+    color: var(--text3);
+    margin-bottom: 20px;
+  }
+  .onboard-section {
+    margin-bottom: 18px;
+  }
+  .onboard-section h3 {
+    font-size: 0.82rem;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .onboard-step {
+    display: flex;
+    gap: 10px;
+    font-size: 0.8rem;
+    color: var(--text2);
+    line-height: 1.55;
+    margin-bottom: 8px;
+  }
+  .onboard-step-num {
+    flex-shrink: 0;
+    width: 19px; height: 19px;
+    border-radius: 50%;
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 1px;
+  }
+  .onboard-step a { color: var(--accent); }
+  .onboard-step code {
+    background: var(--bg3);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--text);
+  }
+  .onboard-note {
+    background: var(--green-tint);
+    border-left: 2px solid var(--green);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 9px 13px;
+    font-size: 0.76rem;
+    color: var(--text2);
+    line-height: 1.5;
+  }
+  .onboard-note strong { color: var(--green); }
+  .onboard-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px;
+    border-top: 1px solid var(--border);
+    gap: 12px;
+  }
+  .onboard-dismiss {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.78rem;
+    color: var(--text2);
+  }
+  .onboard-dismiss input { accent-color: var(--accent); cursor: pointer; }
+
+  /* ── Update modal ──────────────────────────────────────────────────── */
+  .update-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 420px;
+    padding: 28px 26px 22px;
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
+    text-align: center;
+  }
+  .update-icon {
+    font-size: 2.4rem;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .update-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+  .update-text {
+    font-size: 0.85rem;
+    color: var(--text2);
+    line-height: 1.55;
+    margin-bottom: 20px;
+  }
+  .update-text .ver {
+    font-family: var(--mono);
+    background: var(--bg3);
+    padding: 1px 7px;
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 0.8rem;
+  }
+  .update-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
+  .update-progress {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: var(--text2);
+    padding: 8px 0;
+  }
+  .update-spinner {
+    width: 16px; height: 16px;
+    border: 2px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
   /* toast */
   .toast {
     position: fixed;
@@ -1107,6 +1435,7 @@
     </div>
 
     <div class="sidebar-bottom">
+      <button class="settings-btn" onclick="openOnboarding()" style="margin-bottom:6px">❓ Help &amp; setup guide</button>
       <button class="settings-btn" onclick="openSettings()">⚙ Settings &amp; API keys</button>
     </div>
   </aside>
@@ -1186,6 +1515,19 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     </div>
     <div class="modal-body">
       <div class="modal-text" id="explainText">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Citations modal ──────────────────────────────────────────────── -->
+<div class="modal-overlay" id="citeOverlay" onclick="if(event.target===this)closeCitations()">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div class="modal-title" id="citeTitle">Citation graph</div>
+      <button class="modal-close" onclick="closeCitations()">✕</button>
+    </div>
+    <div class="modal-body" id="citeBody">
+      <div class="cite-loading">Loading citation graph…</div>
     </div>
   </div>
 </div>
@@ -1271,12 +1613,253 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
   </div>
 </div>
 
+<!-- ── Onboarding / Welcome modal ───────────────────────────────────── -->
+<div class="modal-overlay" id="onboardOverlay">
+  <div class="onboard-modal">
+    <div class="onboard-lang">
+      <button class="lang-btn active" id="langEn" onclick="setOnboardLang('en')">English</button>
+      <button class="lang-btn" id="langIt" onclick="setOnboardLang('it')">Italiano</button>
+    </div>
+
+    <div class="onboard-body" id="onboardBody">
+      <!-- filled by JS based on language -->
+    </div>
+
+    <div class="onboard-footer">
+      <label class="onboard-dismiss">
+        <input type="checkbox" id="onboardDismissChk">
+        <span id="onboardDismissLabel">Don't show this again</span>
+      </label>
+      <button class="btn-primary" id="onboardCloseBtn" onclick="closeOnboarding()">Get started</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Update modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="updateOverlay">
+  <div class="update-modal">
+    <div class="update-icon">⟳</div>
+    <div class="update-title" id="updateTitle">Update available</div>
+    <div class="update-text" id="updateText"></div>
+    <div class="update-progress" id="updateProgress" style="display:none">
+      <div class="update-spinner"></div>
+      <span id="updateProgressText">Updating…</span>
+    </div>
+    <div class="update-actions" id="updateActions">
+      <button class="btn-secondary" onclick="closeUpdate()">Later</button>
+      <button class="btn-primary" id="updateNowBtn" onclick="applyUpdate()">Update now</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast ─────────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────
 let allArticles    = [];
+
+// ── Onboarding (bilingual welcome popup) ───────────────────────────────────
+const ONBOARD_CONTENT = {
+  en: {
+    welcome: 'Welcome to <span class="accent">MedSearch</span>',
+    purpose: 'A quick setup guide to get you searching the medical literature.',
+    closeBtn: 'Get started',
+    dismiss: "Don't show this again",
+    sections: [
+      {
+        title: '🔑 Set up your API key (for AI features)',
+        steps: [
+          'Open <strong>⚙ Settings &amp; API keys</strong> at the bottom-left of the app.',
+          'Paste your <strong>Anthropic key</strong> to enable AI summaries and synthesis. Get one free at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.',
+          'Click <strong>Save</strong>. That\'s the only key you need for the AI features.',
+        ],
+      },
+      {
+        title: '🔎 How to search',
+        steps: [
+          'Type your topic in the search bar and press <strong>Search</strong>.',
+          'Tick the <strong>databases</strong> you want on the left (PubMed, Cochrane and others are free).',
+          'Keep <strong>Strict</strong> on for focused results; turn it off to search more broadly.',
+        ],
+      },
+      {
+        title: '✨ Useful features',
+        steps: [
+          '<strong>★ Save</strong> a search to re-run it later with one click.',
+          '<strong>✦ Explain</strong> any article for a plain-language breakdown.',
+          '<strong>⊹ Citations</strong> shows what a paper cites and what cites it.',
+        ],
+      },
+    ],
+    note: '<strong>Optional keys:</strong> Scopus, Web of Science and a PubMed key add more sources and higher limits — but everything works without them.',
+  },
+  it: {
+    welcome: 'Benvenuto su <span class="accent">MedSearch</span>',
+    purpose: 'Una breve guida per iniziare a cercare nella letteratura medica.',
+    closeBtn: 'Inizia',
+    dismiss: 'Non mostrare più',
+    sections: [
+      {
+        title: '🔑 Configura la tua chiave API (per le funzioni IA)',
+        steps: [
+          'Apri <strong>⚙ Settings &amp; API keys</strong> in basso a sinistra nell\'app.',
+          'Incolla la tua <strong>chiave Anthropic</strong> per attivare i riassunti e la sintesi IA. Ottienine una gratis su <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>.',
+          'Clicca <strong>Save</strong>. È l\'unica chiave necessaria per le funzioni IA.',
+        ],
+      },
+      {
+        title: '🔎 Come cercare',
+        steps: [
+          'Scrivi l\'argomento nella barra di ricerca e premi <strong>Search</strong>.',
+          'Seleziona i <strong>database</strong> che vuoi a sinistra (PubMed, Cochrane e altri sono gratuiti).',
+          'Tieni <strong>Strict</strong> attivo per risultati mirati; disattivalo per cercare in modo più ampio.',
+        ],
+      },
+      {
+        title: '✨ Funzioni utili',
+        steps: [
+          '<strong>★ Save</strong> salva una ricerca per rieseguirla con un clic.',
+          '<strong>✦ Explain</strong> spiega qualsiasi articolo in linguaggio semplice.',
+          '<strong>⊹ Citations</strong> mostra cosa cita un articolo e da chi è citato.',
+        ],
+      },
+    ],
+    note: '<strong>Chiavi opzionali:</strong> Scopus, Web of Science e una chiave PubMed aggiungono più fonti e limiti più alti — ma tutto funziona anche senza.',
+  },
+};
+
+let _onboardLang = 'en';
+
+function renderOnboardBody() {
+  const t = ONBOARD_CONTENT[_onboardLang];
+  let html = `<div class="onboard-welcome">${t.welcome}</div>
+    <div class="onboard-purpose">${t.purpose}</div>`;
+  t.sections.forEach(sec => {
+    html += `<div class="onboard-section"><h3>${sec.title}</h3>`;
+    sec.steps.forEach((step, i) => {
+      html += `<div class="onboard-step">
+        <span class="onboard-step-num">${i+1}</span>
+        <span>${step}</span></div>`;
+    });
+    html += `</div>`;
+  });
+  html += `<div class="onboard-note">${t.note}</div>`;
+  document.getElementById('onboardBody').innerHTML = html;
+  document.getElementById('onboardCloseBtn').textContent = t.closeBtn;
+  document.getElementById('onboardDismissLabel').textContent = t.dismiss;
+}
+
+function setOnboardLang(lang) {
+  _onboardLang = lang;
+  document.getElementById('langEn').classList.toggle('active', lang === 'en');
+  document.getElementById('langIt').classList.toggle('active', lang === 'it');
+  renderOnboardBody();
+}
+
+function openOnboarding() {
+  setOnboardLang('en');
+  document.getElementById('onboardOverlay').classList.add('open');
+}
+
+function closeOnboarding() {
+  // If "don't show again" is ticked, persist it server-side
+  if (document.getElementById('onboardDismissChk').checked) {
+    fetch('/onboarding/dismiss', {method: 'POST'});
+  }
+  document.getElementById('onboardOverlay').classList.remove('open');
+}
+
+// Show automatically on first launch (server decides via show_onboarding flag)
+{% if show_onboarding %}
+window.addEventListener('load', () => { openOnboarding(); });
+const _onboardingShowing = true;
+{% else %}
+const _onboardingShowing = false;
+{% endif %}
+
+// ── Auto-update ────────────────────────────────────────────────────────────
+function checkForUpdate() {
+  fetch('/update/check')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok || !data.update_available) return;   // silent if up-to-date or offline
+      const text = document.getElementById('updateText');
+      const actions = document.getElementById('updateActions');
+      const btn = document.getElementById('updateNowBtn');
+      if (data.can_apply) {
+        text.innerHTML = `A new version of MedSearch is available.<br><br>
+          <span class="ver">${escHtml(data.local)}</span> → <span class="ver">${escHtml(data.remote)}</span>`;
+        btn.style.display = '';
+      } else {
+        // Not a git checkout — can't auto-apply, just inform
+        text.innerHTML = `A new version (<span class="ver">${escHtml(data.remote)}</span>) is available, but this copy can't auto-update.<br><br>
+          Ask whoever set this up to re-install from GitHub.`;
+        btn.style.display = 'none';
+      }
+      document.getElementById('updateOverlay').classList.add('open');
+    })
+    .catch(() => { /* offline — stay silent */ });
+}
+
+function closeUpdate() {
+  document.getElementById('updateOverlay').classList.remove('open');
+}
+
+function applyUpdate() {
+  document.getElementById('updateActions').style.display = 'none';
+  document.getElementById('updateProgress').style.display = 'flex';
+  document.getElementById('updateProgressText').textContent = 'Downloading update…';
+
+  fetch('/update/apply', {method: 'POST'})
+    .then(r => r.json())
+    .then(data => {
+      const prog = document.getElementById('updateProgress');
+      const title = document.getElementById('updateTitle');
+      const text = document.getElementById('updateText');
+      if (data.ok) {
+        prog.style.display = 'none';
+        title.textContent = 'Update complete';
+        text.innerHTML = `Updated to <span class="ver">${escHtml(data.new_version)}</span>.<br><br>
+          Please <strong>close and reopen MedSearch</strong> to use the new version.`;
+        document.getElementById('updateActions').style.display = 'flex';
+        document.getElementById('updateActions').innerHTML =
+          '<button class="btn-primary" onclick="closeUpdate()">Got it</button>';
+      } else {
+        prog.style.display = 'none';
+        title.textContent = 'Update failed';
+        text.innerHTML = escHtml(data.message || 'Could not update.') +
+          (data.error ? `<br><br><span style="font-size:0.72rem;color:var(--text3);font-family:var(--mono)">${escHtml(data.error)}</span>` : '');
+        document.getElementById('updateActions').style.display = 'flex';
+        document.getElementById('updateActions').innerHTML =
+          '<button class="btn-secondary" onclick="closeUpdate()">Close</button>';
+      }
+    })
+    .catch(e => {
+      document.getElementById('updateProgress').style.display = 'none';
+      document.getElementById('updateTitle').textContent = 'Update failed';
+      document.getElementById('updateText').textContent = 'Could not reach the update service: ' + e.message;
+      document.getElementById('updateActions').style.display = 'flex';
+    });
+}
+
+// Run the update check on launch — but defer if onboarding is showing,
+// so we never stack two popups on a first-time user.
+window.addEventListener('load', () => {
+  const delay = _onboardingShowing ? 0 : 1500;
+  if (_onboardingShowing) {
+    // wait until they've closed onboarding, then check
+    const iv = setInterval(() => {
+      if (!document.getElementById('onboardOverlay').classList.contains('open')) {
+        clearInterval(iv);
+        setTimeout(checkForUpdate, 800);
+      }
+    }, 1000);
+  } else {
+    setTimeout(checkForUpdate, delay);
+  }
+});
+
 let synthesisOpen  = false;
 let searchRunning  = false;
 let lastSearchParams = null;   // for saving searches
@@ -1540,7 +2123,11 @@ function makeCard(a) {
   if (a.nct_id)
     links += `<a class="link-btn doi" href="https://clinicaltrials.gov/study/${a.nct_id}" target="_blank">ClinicalTrials</a>`;
 
-  const explainBtn = `<button class="link-btn explain-btn" onclick="openExplain(${a._idx})">✦ Explain</button>`;
+  const citeBtn = a.doi
+    ? `<button class="link-btn cite-btn" onclick="openCitations(${a._idx})">⊹ Citations</button>`
+    : '';
+  // when there's no cite button, explain takes the right-push
+  const explainBtn = `<button class="link-btn explain-btn${a.doi ? '' : ' push-right'}" onclick="openExplain(${a._idx})">✦ Explain</button>`;
 
   const abstract = a.abstract || '';
   const oneliner = a.oneliner
@@ -1559,7 +2146,7 @@ function makeCard(a) {
       <div class="article-abstract" id="abs_${a._idx}">${escHtml(abstract)}</div>
       <button class="expand-btn" id="expbtn_${a._idx}"
         onclick="toggleAbstract(${a._idx})">Show more ▾</button>` : ''}
-    <div class="article-links">${links} ${explainBtn}</div>`;
+    <div class="article-links">${links} ${citeBtn} ${explainBtn}</div>`;
   return card;
 }
 
@@ -1615,6 +2202,143 @@ function openExplain(idx) {
 
 function closeExplain() {
   document.getElementById('explainOverlay').classList.remove('open');
+}
+
+// ── Citation graph ─────────────────────────────────────────────────────────
+function openCitations(idx) {
+  const a = allArticles[idx];
+  if (!a) return;
+  document.getElementById('citeTitle').textContent =
+    'Citation graph · ' + (a.title.length > 70 ? a.title.slice(0,70)+'…' : a.title);
+  document.getElementById('citeBody').innerHTML =
+    '<div class="cite-loading">Fetching references & citations…</div>';
+  document.getElementById('citeOverlay').classList.add('open');
+
+  fetch('/citations/' + idx)
+    .then(r => r.json())
+    .then(data => renderCitations(data, a))
+    .catch(e => {
+      document.getElementById('citeBody').innerHTML =
+        `<div class="cite-error">Could not load citation graph: ${escHtml(e.message)}</div>`;
+    });
+}
+
+function closeCitations() {
+  document.getElementById('citeOverlay').classList.remove('open');
+}
+
+function renderCitations(data, article) {
+  const body = document.getElementById('citeBody');
+
+  if (data.error === 'no_doi') {
+    body.innerHTML = `<div class="cite-error">${escHtml(data.message)}</div>`;
+    return;
+  }
+  if (data.error) {
+    body.innerHTML = `<div class="cite-error">${escHtml(data.error)}</div>`;
+    return;
+  }
+
+  const refs = data.references || [];
+  const cits = data.citations || [];
+
+  if (!refs.length && !cits.length) {
+    body.innerHTML = `<div class="cite-error">
+      No citation data found for this article in OpenCitations.<br>
+      <span style="font-size:0.75rem;color:var(--text3)">
+      Coverage is best for articles with a Crossref DOI; very recent or niche papers may not be indexed yet.</span>
+    </div>`;
+    return;
+  }
+
+  // Build the visual graph (SVG) + the two lists
+  const graphSvg = buildCiteGraph(article, refs, cits);
+
+  const refList = refs.length
+    ? refs.map(r => citeItemHtml(r)).join('')
+    : '<div class="cite-empty-col">No references found in OpenCitations.</div>';
+  const citList = cits.length
+    ? cits.map(c => citeItemHtml(c)).join('')
+    : '<div class="cite-empty-col">No citing papers found yet.</div>';
+
+  body.innerHTML = `
+    ${graphSvg}
+    <div class="cite-columns">
+      <div>
+        <div class="cite-col-title refs">↓ References
+          <span class="cite-col-count">${data.ref_total} total${refs.length < data.ref_total ? ', showing '+refs.length : ''}</span>
+        </div>
+        ${refList}
+      </div>
+      <div>
+        <div class="cite-col-title cits">↑ Cited by
+          <span class="cite-col-count">${data.cit_total} total${cits.length < data.cit_total ? ', showing '+cits.length : ''}</span>
+        </div>
+        ${citList}
+      </div>
+    </div>
+    <div class="cite-note">Citation data from OpenCitations · titles resolved via Crossref</div>`;
+}
+
+function citeItemHtml(item) {
+  const meta = [];
+  if (item.authors) meta.push(escHtml(item.authors));
+  if (item.year)    meta.push(item.year);
+  if (item.journal) meta.push(escHtml(item.journal));
+  const doiLink = item.doi
+    ? `<a href="https://doi.org/${encodeURIComponent(item.doi)}" target="_blank">DOI ↗</a>` : '';
+  return `<div class="cite-item">
+    <div class="cite-item-title">${escHtml(item.title || '(untitled)')}</div>
+    <div class="cite-item-meta">${meta.join(' · ')} ${doiLink}</div>
+  </div>`;
+}
+
+// Radial SVG: center node = this paper, references LEFT, citations RIGHT
+function buildCiteGraph(article, refs, cits) {
+  const W = 860, H = 320, cx = W/2, cy = H/2;
+  const maxPer = 8;  // nodes shown per side in the graph (lists show all)
+  const r = refs.slice(0, maxPer);
+  const c = cits.slice(0, maxPer);
+
+  let nodes = '', links = '';
+
+  function place(items, side) {
+    const n = items.length;
+    if (!n) return;
+    const rx = 300;            // horizontal reach
+    const vSpan = 240;         // vertical spread
+    const dir = (side === 'left' ? -1 : 1);
+    items.forEach((it, i) => {
+      const x = cx + dir * (140 + rx * (0.35 + 0.65 * (i % 2)));  // stagger depth
+      const frac = n === 1 ? 0.5 : i / (n - 1);
+      const y = cy - vSpan/2 + frac * vSpan;
+      const cls = side === 'left' ? 'cite-node-ref' : 'cite-node-cit';
+      links += `<line class="cite-link" x1="${cx}" y1="${cy}" x2="${x}" y2="${y}"/>`;
+      nodes += `<circle class="${cls}" cx="${x}" cy="${y}" r="8"/>`;
+      if (it.year) nodes += `<text class="cite-node-label" x="${x}" y="${y - 13}" text-anchor="middle">${it.year}</text>`;
+    });
+  }
+  place(r, 'left');
+  place(c, 'right');
+
+  // Center node + label
+  nodes += `<circle class="cite-node-center" cx="${cx}" cy="${cy}" r="12"/>`;
+  const shortTitle = (article.title || '').slice(0, 34) + ((article.title||'').length>34?'…':'');
+  nodes += `<text class="cite-node-label" x="${cx}" y="${cy + 30}" text-anchor="middle" style="font-weight:bold">${escHtml(shortTitle)}</text>`;
+  // side headers
+  nodes += `<text class="cite-axis-label" x="${cx - 300}" y="24" text-anchor="middle">↓ REFERENCES</text>`;
+  nodes += `<text class="cite-axis-label" x="${cx + 300}" y="24" text-anchor="middle">↑ CITED BY</text>`;
+
+  return `<div class="cite-graph-wrap">
+    <svg class="cite-graph-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+      ${links}${nodes}
+    </svg>
+    <div class="cite-legend">
+      <span class="cite-legend-item"><span class="cite-dot center"></span> This paper</span>
+      <span class="cite-legend-item"><span class="cite-dot ref"></span> References (what it cites)</span>
+      <span class="cite-legend-item"><span class="cite-dot cit"></span> Cited by (what cites it)</span>
+    </div>
+  </div>`;
 }
 
 // ── Export ─────────────────────────────────────────────────────────────────
@@ -1830,7 +2554,7 @@ document.addEventListener('keydown', e => {
     document.getElementById('searchInput').focus();
   }
   if (e.key === 'Escape') {
-    closeExplain(); closeSettings(); closeExport(); closeSynthesis();
+    closeExplain(); closeSettings(); closeExport(); closeSynthesis(); closeCitations();
   }
 });
 </script>
