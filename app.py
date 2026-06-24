@@ -298,6 +298,114 @@ def ai_explain_stream(article):
     yield "data: "+json.dumps({"type":"done"})+"\n\n"
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  AI ASSISTANT  (content-aware clinical chat, grounded in current results)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _articles_context(articles, limit=15, abstract_chars=300):
+    """Build a compact text digest of the current results for grounding."""
+    if not articles:
+        return "(No search results are currently loaded.)"
+    parts = []
+    for i, a in enumerate(articles[:limit], 1):
+        ol = f"\n    Key point: {a['oneliner']}" if a.get("oneliner") else ""
+        parts.append(
+            f"[{i}] {a.get('title','')} ({a.get('year','n.d.')}, "
+            f"{a.get('journal','')}; {a.get('source','')})\n"
+            f"    Authors: {a.get('authors','Unknown')}{ol}\n"
+            f"    Abstract: {(a.get('abstract') or '')[:abstract_chars]}"
+        )
+    extra = f"\n\n(+{len(articles)-limit} more results not shown)" if len(articles) > limit else ""
+    return "\n\n".join(parts) + extra
+
+ASSISTANT_SYSTEM = (
+    "You are a clinical research assistant inside MedSearch, a medical literature "
+    "search tool used by physicians and researchers. You help interpret evidence, "
+    "answer clinical and scientific questions, and suggest directions for further "
+    "inquiry.\n\n"
+    "When the user's current search results are provided, ground your answers in "
+    "them and cite specific papers by their bracket number, e.g. [3]. If the results "
+    "don't contain the answer, say so plainly and then answer from general medical "
+    "knowledge, making clear you're doing so.\n\n"
+    "You can also answer general clinical questions that aren't about the loaded "
+    "results. Be accurate, concise, and appropriately cautious. Note important "
+    "uncertainties or contraindications. You are an aid to clinical reasoning, not a "
+    "substitute for professional judgment; do not give individualized treatment "
+    "directives for specific patients."
+)
+
+def assistant_chat_stream(messages, query, articles):
+    """Stream a chat completion grounded in current results. `messages` is the
+    running conversation [{role, content}, ...] from the client."""
+    key = (CONFIG.get("anthropic_api_key","") or "").strip()
+    if not key:
+        yield "data: " + json.dumps({"type":"error","text":"No API key set. Add your Anthropic key in Settings to use the assistant."}) + "\n\n"
+        return
+
+    context = _articles_context(articles)
+    system = (ASSISTANT_SYSTEM +
+              f"\n\n=== CURRENT SEARCH ===\nQuery: {query or '(none)'}\n"
+              f"Results currently loaded:\n{context}")
+
+    payload = json.dumps({
+        "model": "claude-sonnet-4-6",
+        "max_tokens": 1024,
+        "stream": True,
+        "system": system,
+        "messages": messages,
+    }).encode()
+    req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload,
+        headers={"x-api-key":key,"anthropic-version":"2023-06-01",
+                 "content-type":"application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            for raw in r:
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line.startswith("data:"): continue
+                ps = line[5:].strip()
+                if ps == "[DONE]": break
+                try:
+                    chunk = json.loads(ps).get("delta",{}).get("text","")
+                    if chunk:
+                        yield "data: " + json.dumps({"type":"chunk","text":chunk}) + "\n\n"
+                except: continue
+    except urllib.error.HTTPError as e:
+        msg = f"Anthropic API error {e.code}. "
+        if e.code == 401: msg += "Your API key is invalid or expired."
+        elif e.code == 429: msg += "Rate limit or insufficient credits."
+        yield "data: " + json.dumps({"type":"error","text":msg}) + "\n\n"
+    except Exception as e:
+        yield "data: " + json.dumps({"type":"error","text":f"Request failed: {e}"}) + "\n\n"
+    yield "data: " + json.dumps({"type":"done"}) + "\n\n"
+
+def assistant_suggestions(query, articles):
+    """Generate 3-4 short follow-up questions based on the current search.
+    Returns a list of strings (best-effort; empty list on failure)."""
+    key = (CONFIG.get("anthropic_api_key","") or "").strip()
+    if not key or not query:
+        return []
+    context = _articles_context(articles, limit=10, abstract_chars=150)
+    prompt = (
+        f'A clinician searched for: "{query}"\n\n'
+        f"These results are loaded:\n{context}\n\n"
+        "Suggest exactly 4 concise follow-up questions the clinician might want to "
+        "ask about this evidence (comparisons, mechanisms, dosing, contraindications, "
+        "gaps, guidelines, etc.). Each question ≤12 words, specific to this topic. "
+        "Respond ONLY with a JSON array of 4 strings, nothing else."
+    )
+    try:
+        r = _claude([{"role":"user","content":prompt}], max_tokens=300)
+        if not r: return []
+        text = json.loads(r.read().decode())["content"][0]["text"].strip()
+        # strip code fences if present
+        text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
+        arr = json.loads(text)
+        if isinstance(arr, list):
+            return [str(q).strip() for q in arr if str(q).strip()][:4]
+    except Exception:
+        return []
+    return []
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  MESH
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1198,6 +1306,39 @@ def citations(idx):
     graph["source_title"] = art.get("title","")
     graph["source_year"]  = art.get("year","")
     return jsonify(graph)
+
+# ── AI Assistant routes ────────────────────────────────────────────────────
+
+@app.route("/assistant/suggestions")
+def assistant_suggestions_route():
+    """Return suggested follow-up questions for the current search."""
+    query    = SESSION.get("query","")
+    articles = SESSION.get("articles",[])
+    return jsonify({"suggestions": assistant_suggestions(query, articles)})
+
+@app.route("/assistant/chat", methods=["POST"])
+def assistant_chat_route():
+    """Streaming chat grounded in the current results.
+    Body: {messages: [{role, content}, ...]}"""
+    data     = request.json or {}
+    messages = data.get("messages", [])
+    # Basic validation/sanitation of the conversation
+    clean = []
+    for m in messages:
+        role = m.get("role")
+        content = (m.get("content") or "").strip()
+        if role in ("user","assistant") and content:
+            clean.append({"role":role, "content":content[:4000]})
+    if not clean or clean[-1]["role"] != "user":
+        return Response("data: "+json.dumps({"type":"error","text":"No question provided."})+"\n\n",
+                        mimetype="text/event-stream")
+    # Keep only the last ~12 turns to bound the prompt size
+    clean = clean[-12:]
+    query    = SESSION.get("query","")
+    articles = SESSION.get("articles",[])
+    return Response(stream_with_context(assistant_chat_stream(clean, query, articles)),
+                    mimetype="text/event-stream",
+                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
 @app.route("/export", methods=["POST"])
 def export():

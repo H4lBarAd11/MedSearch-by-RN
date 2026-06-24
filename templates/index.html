@@ -1371,6 +1371,202 @@
     animation: spin 0.7s linear infinite;
   }
 
+  /* ── AI Assistant ──────────────────────────────────────────────────── */
+  .assistant-bubble {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    font-size: 1.5rem;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(94,62,38,0.30);
+    z-index: 1500;
+    transition: transform var(--transition), background var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .assistant-bubble:hover { background: var(--accent2); transform: scale(1.06); }
+  .assistant-bubble.hidden { transform: scale(0); opacity: 0; pointer-events: none; }
+  .assistant-bubble-icon { line-height: 1; }
+
+  .assistant-panel {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 400px;
+    max-width: calc(100vw - 48px);
+    height: 560px;
+    max-height: calc(100vh - 48px);
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    box-shadow: 0 16px 50px rgba(94,62,38,0.28);
+    z-index: 1600;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .assistant-panel.open { display: flex; animation: assistantIn 0.22s ease; }
+  @keyframes assistantIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .assistant-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--accent-tint);
+  }
+  .assistant-header-title {
+    font-size: 0.92rem;
+    font-weight: bold;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .assistant-spark { color: var(--accent); }
+  .assistant-close {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: color var(--transition);
+  }
+  .assistant-close:hover { color: var(--text); }
+
+  .assistant-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .assistant-empty {
+    color: var(--text3);
+    font-size: 0.82rem;
+    text-align: center;
+    margin: auto 0;
+    padding: 20px 10px;
+    line-height: 1.6;
+  }
+  .assistant-empty .big { font-size: 1.6rem; display: block; margin-bottom: 8px; color: var(--accent); }
+  .msg {
+    max-width: 88%;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    padding: 9px 13px;
+    border-radius: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--accent);
+    color: #fff;
+    border-bottom-right-radius: 3px;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--bg3);
+    color: var(--text);
+    border-bottom-left-radius: 3px;
+  }
+  .msg.assistant .cite-ref {
+    color: var(--accent);
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .msg-typing {
+    align-self: flex-start;
+    color: var(--text3);
+    font-size: 0.8rem;
+    font-style: italic;
+    padding: 4px 13px;
+  }
+
+  .assistant-suggestions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 14px;
+    max-height: 165px;
+    overflow-y: auto;
+  }
+  .assistant-suggestions:not(:empty) { padding-bottom: 10px; }
+  .suggestion-chip {
+    text-align: left;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-family: var(--font);
+    font-size: 0.76rem;
+    padding: 8px 11px;
+    cursor: pointer;
+    transition: all var(--transition);
+    line-height: 1.4;
+  }
+  .suggestion-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-tint);
+  }
+  .suggestion-chip::before { content: '✦ '; color: var(--accent); }
+  .suggestions-label {
+    font-size: 0.68rem;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 2px 4px;
+  }
+
+  .assistant-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .assistant-input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.82rem;
+    padding: 9px 12px;
+    resize: none;
+    outline: none;
+    max-height: 110px;
+    line-height: 1.4;
+    transition: border-color var(--transition);
+  }
+  .assistant-input:focus { border-color: var(--accent); }
+  .assistant-send {
+    flex-shrink: 0;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .assistant-send:hover { background: var(--accent2); }
+  .assistant-send:disabled { opacity: 0.5; cursor: default; }
+
   /* toast */
   .toast {
     position: fixed;
@@ -1734,6 +1930,30 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
   </div>
 </div>
 
+<!-- ── AI Assistant (floating bubble + chat panel) ──────────────────── -->
+<button class="assistant-bubble" id="assistantBubble" onclick="toggleAssistant()" title="Ask the research assistant">
+  <span class="assistant-bubble-icon">✦</span>
+</button>
+
+<div class="assistant-panel" id="assistantPanel">
+  <div class="assistant-header">
+    <div class="assistant-header-title">
+      <span class="assistant-spark">✦</span> Research Assistant
+    </div>
+    <button class="assistant-close" onclick="toggleAssistant()">✕</button>
+  </div>
+  <div class="assistant-messages" id="assistantMessages">
+    <!-- messages injected here -->
+  </div>
+  <div class="assistant-suggestions" id="assistantSuggestions"></div>
+  <div class="assistant-input-row">
+    <textarea class="assistant-input" id="assistantInput" rows="1"
+      placeholder="Ask about these results, or any clinical question…"
+      onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAssistantMessage();}"></textarea>
+    <button class="assistant-send" id="assistantSend" onclick="sendAssistantMessage()">↑</button>
+  </div>
+</div>
+
 <!-- ── Toast ─────────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
@@ -2015,6 +2235,7 @@ function runSearch() {
   setSearchButtonStop(true);
   allArticles = [];
   closeSynthesis();
+  resetAssistantSuggestions();   // refresh suggestions for the new search
 
   searchAbortController = new AbortController();
 
@@ -2375,6 +2596,191 @@ function closeSynthesis() {
   document.getElementById('synthesisPanel').classList.remove('open');
   synthesisOpen = false;
 }
+
+// ── AI Assistant (floating chat) ────────────────────────────────────────────
+let assistantOpen = false;
+let assistantHistory = [];      // [{role, content}, ...]
+let assistantStreaming = false;
+let assistantSuggestionsLoaded = false;
+
+function toggleAssistant() {
+  assistantOpen = !assistantOpen;
+  const panel  = document.getElementById('assistantPanel');
+  const bubble = document.getElementById('assistantBubble');
+  if (assistantOpen) {
+    panel.classList.add('open');
+    bubble.classList.add('hidden');
+    renderAssistantMessages();
+    loadAssistantSuggestions();   // suggestions appear when opened
+    setTimeout(() => document.getElementById('assistantInput').focus(), 100);
+  } else {
+    panel.classList.remove('open');
+    bubble.classList.remove('hidden');
+  }
+}
+
+function renderAssistantMessages() {
+  const box = document.getElementById('assistantMessages');
+  if (!assistantHistory.length) {
+    box.innerHTML = `<div class="assistant-empty">
+      <span class="big">✦</span>
+      Ask me about your current search results, or any clinical question.
+      I'll ground answers in the papers you've found and cite them by number.
+    </div>`;
+    return;
+  }
+  box.innerHTML = assistantHistory.map(m =>
+    `<div class="msg ${m.role}">${m.role==='assistant' ? linkifyCites(m.content) : escHtml(m.content)}</div>`
+  ).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+// Turn [N] references into clickable spans that scroll to that card
+function linkifyCites(text) {
+  return escHtml(text).replace(/\[(\d+)\]/g, (m, n) =>
+    `<span class="cite-ref" onclick="jumpToCard(${parseInt(n)-1})">[${n}]</span>`);
+}
+
+function jumpToCard(idx) {
+  const card = document.getElementById('card_' + idx);
+  if (card) {
+    card.scrollIntoView({behavior:'smooth', block:'center'});
+    card.style.transition = 'background 0.3s';
+    const orig = card.style.background;
+    card.style.background = 'var(--accent-tint)';
+    setTimeout(() => { card.style.background = orig; }, 1200);
+  }
+}
+
+async function loadAssistantSuggestions() {
+  const wrap = document.getElementById('assistantSuggestions');
+  // Only show suggestions if there's a current search and we haven't loaded yet this session
+  if (!allArticles.filter(Boolean).length) { wrap.innerHTML = ''; return; }
+  if (assistantSuggestionsLoaded) return;
+  wrap.innerHTML = '<div class="suggestions-label">Thinking of questions…</div>';
+  try {
+    const res  = await fetch('/assistant/suggestions');
+    const data = await res.json();
+    if (data.suggestions && data.suggestions.length) {
+      wrap.innerHTML = '<div class="suggestions-label">Suggested questions</div>' +
+        data.suggestions.map(s =>
+          `<button class="suggestion-chip" onclick="useSuggestion('${escAttr(s)}')">${escHtml(s)}</button>`
+        ).join('');
+      assistantSuggestionsLoaded = true;
+    } else {
+      wrap.innerHTML = '';
+    }
+  } catch(e) { wrap.innerHTML = ''; }
+}
+
+function useSuggestion(text) {
+  document.getElementById('assistantInput').value = text;
+  document.getElementById('assistantSuggestions').innerHTML = '';
+  sendAssistantMessage();
+}
+
+function sendAssistantMessage() {
+  const input = document.getElementById('assistantInput');
+  const text  = input.value.trim();
+  if (!text || assistantStreaming) return;
+
+  // hide suggestions once the conversation starts
+  document.getElementById('assistantSuggestions').innerHTML = '';
+
+  assistantHistory.push({role:'user', content:text});
+  input.value = '';
+  input.style.height = 'auto';
+  renderAssistantMessages();
+
+  // Add a placeholder assistant message that we'll stream into
+  assistantHistory.push({role:'assistant', content:''});
+  const msgIndex = assistantHistory.length - 1;
+  renderAssistantMessages();
+
+  // Show a typing indicator on the (empty) last bubble
+  const box = document.getElementById('assistantMessages');
+  const typing = document.createElement('div');
+  typing.className = 'msg-typing';
+  typing.id = 'assistantTyping';
+  typing.textContent = '✦ thinking…';
+  box.appendChild(typing);
+  box.scrollTop = box.scrollHeight;
+
+  assistantStreaming = true;
+  document.getElementById('assistantSend').disabled = true;
+
+  fetch('/assistant/chat', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({messages: assistantHistory.slice(0, -1)})  // exclude empty placeholder
+  }).then(response => {
+    const reader  = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const typingEl = document.getElementById('assistantTyping');
+    if (typingEl) typingEl.remove();
+
+    function pump() {
+      return reader.read().then(({done, value}) => {
+        if (done) { finishAssistantMessage(); return; }
+        buffer += decoder.decode(value, {stream:true});
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop();
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data:')) continue;
+          try {
+            const d = JSON.parse(line.slice(5).trim());
+            if (d.type === 'chunk') {
+              assistantHistory[msgIndex].content += d.text;
+              updateStreamingBubble(msgIndex);
+            } else if (d.type === 'error') {
+              assistantHistory[msgIndex].content = '⚠ ' + d.text;
+              updateStreamingBubble(msgIndex);
+            }
+          } catch(e) {}
+        }
+        return pump();
+      });
+    }
+    return pump();
+  }).catch(e => {
+    assistantHistory[msgIndex].content = '⚠ Connection error: ' + e.message;
+    finishAssistantMessage();
+  });
+}
+
+function updateStreamingBubble(msgIndex) {
+  const box = document.getElementById('assistantMessages');
+  const bubbles = box.querySelectorAll('.msg.assistant');
+  const last = bubbles[bubbles.length - 1];
+  if (last) {
+    last.innerHTML = linkifyCites(assistantHistory[msgIndex].content);
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+function finishAssistantMessage() {
+  assistantStreaming = false;
+  document.getElementById('assistantSend').disabled = false;
+  const t = document.getElementById('assistantTyping');
+  if (t) t.remove();
+  renderAssistantMessages();
+}
+
+// When a new search runs, reset suggestions so they refresh next time assistant opens
+function resetAssistantSuggestions() {
+  assistantSuggestionsLoaded = false;
+}
+
+// auto-grow the textarea
+document.addEventListener('DOMContentLoaded', () => {
+  const ai = document.getElementById('assistantInput');
+  if (ai) ai.addEventListener('input', () => {
+    ai.style.height = 'auto';
+    ai.style.height = Math.min(ai.scrollHeight, 110) + 'px';
+  });
+});
 
 // ── Explain ────────────────────────────────────────────────────────────────
 function openExplain(idx) {
