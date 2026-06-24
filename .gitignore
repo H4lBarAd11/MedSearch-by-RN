@@ -1,8 +1,26 @@
+# Virtual environment
 .venv/
+venv/
+
+# Python cache
 __pycache__/
 *.pyc
-*.spec
+*.pyo
+
+# Build artifacts
 build/
 dist/
+*.spec
+
+# The generated macOS app bundle (colleagues build their own)
+MedSearch.app/
+
+# Runtime logs
+.medsearch_app.log
+*.log
+
+# macOS
 .DS_Store
-~/medsearch_exports/
+
+# User exports (created at runtime)
+medsearch_exports/

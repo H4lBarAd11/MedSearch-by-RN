@@ -1819,9 +1819,14 @@ function applyUpdate() {
       const text = document.getElementById('updateText');
       if (data.ok) {
         prog.style.display = 'none';
-        title.textContent = 'Update complete';
-        text.innerHTML = `Updated to <span class="ver">${escHtml(data.new_version)}</span>.<br><br>
-          Please <strong>close and reopen MedSearch</strong> to use the new version.`;
+        if (data.unchanged) {
+          title.textContent = 'Already up to date';
+          text.innerHTML = escHtml(data.message || `You're on the latest version.`);
+        } else {
+          title.textContent = 'Update complete';
+          text.innerHTML = `Updated to <span class="ver">${escHtml(data.new_version)}</span>.<br><br>
+            Please <strong>close and reopen MedSearch</strong> to use the new version.`;
+        }
         document.getElementById('updateActions').style.display = 'flex';
         document.getElementById('updateActions').innerHTML =
           '<button class="btn-primary" onclick="closeUpdate()">Got it</button>';

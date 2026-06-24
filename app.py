@@ -793,26 +793,56 @@ def update_check():
 
 @app.route("/update/apply", methods=["POST"])
 def update_apply():
-    """Run `git pull` to fetch the latest version, then signal restart needed."""
+    """
+    Update to the latest version from GitHub.
+    Uses fetch + hard reset to the remote branch so local file changes
+    (e.g. a flipped executable bit, or an accidental edit) can't block the
+    update. User config and data live in ~/.medsearch/, outside the repo,
+    so they're never touched.
+    """
     if not (APP_DIR_PATH / ".git").exists():
         return jsonify({"ok": False,
                         "message": "This copy isn't a git checkout, so it can't auto-update. "
                                    "Please re-clone from GitHub."}), 200
+    import subprocess
+    git = ["git", "-C", str(APP_DIR_PATH)]
+    version_before = get_local_version()
     try:
-        import subprocess
-        result = subprocess.run(
-            ["git", "-C", str(APP_DIR_PATH), "pull", "--ff-only"],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            new_version = get_local_version()
-            return jsonify({"ok": True,
-                            "output": result.stdout.strip()[-400:],
-                            "new_version": new_version})
-        else:
+        # 1. Fetch the latest commits from origin
+        fetch = subprocess.run(git + ["fetch", "origin"],
+                               capture_output=True, text=True, timeout=60)
+        if fetch.returncode != 0:
             return jsonify({"ok": False,
-                            "message": "git pull failed. You may have local changes.",
-                            "error": (result.stderr or result.stdout).strip()[-400:]}), 200
+                            "message": "Couldn't reach GitHub to fetch the update.",
+                            "error": (fetch.stderr or "").strip()[-400:]}), 200
+
+        # 2. Determine the current branch (usually 'main')
+        branch_res = subprocess.run(git + ["rev-parse", "--abbrev-ref", "HEAD"],
+                                    capture_output=True, text=True, timeout=15)
+        branch = (branch_res.stdout.strip() or "main")
+
+        # 3. Hard reset to origin/<branch> — guarantees we match the remote
+        reset = subprocess.run(git + ["reset", "--hard", f"origin/{branch}"],
+                               capture_output=True, text=True, timeout=60)
+        if reset.returncode != 0:
+            return jsonify({"ok": False,
+                            "message": "Update failed while applying changes.",
+                            "error": (reset.stderr or reset.stdout).strip()[-400:]}), 200
+
+        # 4. Verify the version actually changed (catch silent no-ops)
+        version_after = get_local_version()
+        if _version_tuple(version_after) <= _version_tuple(version_before):
+            # Already at latest, or VERSION didn't move — report honestly
+            return jsonify({"ok": True,
+                            "new_version": version_after,
+                            "unchanged": True,
+                            "message": f"Already up to date (version {version_after})."})
+
+        return jsonify({"ok": True,
+                        "new_version": version_after,
+                        "unchanged": False,
+                        "output": reset.stdout.strip()[-300:]})
+
     except subprocess.TimeoutExpired:
         return jsonify({"ok": False, "message": "Update timed out."}), 200
     except FileNotFoundError:
