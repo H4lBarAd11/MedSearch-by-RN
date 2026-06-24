@@ -67,16 +67,20 @@ def get_local_version():
     try:
         return VERSION_FILE.read_text().strip()
     except Exception:
-        return "0.0.0"
+        return "Beta 0"
 
 def _version_tuple(v):
-    """Parse 'x.y.z' into a comparable tuple; non-numeric parts → 0."""
-    parts = []
-    for p in str(v).strip().split("."):
-        try: parts.append(int(p))
-        except: parts.append(0)
-    while len(parts) < 3: parts.append(0)
-    return tuple(parts[:3])
+    """
+    Parse a version string into a comparable tuple.
+    Handles 'Beta 5' (→ (5,)) and dotted 'x.y.z' (→ (x,y,z)).
+    Any embedded number is extracted; missing/garbage → 0.
+    """
+    s = str(v).strip()
+    # Pull all integers out of the string, in order.
+    nums = re.findall(r"\d+", s)
+    if not nums:
+        return (0,)
+    return tuple(int(n) for n in nums)
 
 LOCAL_VERSION = get_local_version()
 
@@ -194,6 +198,26 @@ def ai_oneliner(title, abstract):
         # one-liners fail silently (don't spam errors per-article); synthesis surfaces them
         return None
     return None
+
+def add_oneliners_parallel(articles, max_workers=8):
+    """
+    Generate AI one-liners for a batch of articles concurrently and patch them
+    into each dict in-place. Much faster than sequential calls: a source with
+    10 articles finishes in ~1 call's time instead of 10. No-op if AI is off.
+    """
+    if not (CONFIG.get("anthropic_api_key","") or "").strip():
+        return articles
+    targets = [a for a in articles if a.get("abstract") and not a.get("oneliner")]
+    if not targets:
+        return articles
+    def _one(a):
+        a["oneliner"] = ai_oneliner(a.get("title",""), a.get("abstract",""))
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
+            list(ex.map(_one, targets))
+    except Exception:
+        pass   # if the pool fails, articles just have no one-liners
+    return articles
 
 def ai_synthesis_stream(query, articles):
     """Generator that yields SSE chunks for the synthesis."""
@@ -527,7 +551,7 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":pmid,
                         "abstract":abstract,"source":source_label,"access_kind":kind,
                         "access_link":link,"scihub":scihub,
-                        "oneliner":ai_oneliner(title, abstract)})
+                        "oneliner":None})
         time.sleep(0.12)
     return results, total
 
@@ -566,7 +590,7 @@ def search_arxiv(query, max_r, y_from, y_to, seen):
         results.append({"title":title,"authors":author_str,"year":year,"journal":"arXiv",
                         "quartile":None,"doi":None,"pmid":None,"abstract":summary,
                         "source":"arXiv","access_kind":"open","access_link":pdf_link,
-                        "scihub":None,"oneliner":ai_oneliner(title,summary)})
+                        "scihub":None,"oneliner":None})
     return results
 
 def search_clinicaltrials(query, max_r, y_from, y_to, seen):
@@ -596,7 +620,7 @@ def search_clinicaltrials(query, max_r, y_from, y_to, seen):
                         "doi":None,"pmid":None,"nct_id":nct,"abstract":brief,
                         "source":"ClinicalTrials","access_kind":"open",
                         "access_link":f"https://clinicaltrials.gov/study/{nct}",
-                        "scihub":None,"oneliner":ai_oneliner(title,brief)})
+                        "scihub":None,"oneliner":None})
         time.sleep(0.1)
     return results
 
@@ -631,7 +655,7 @@ def search_biorxiv(query, server, max_r, y_from, y_to, seen):
                             "journal":label,"quartile":None,"doi":doi,"pmid":None,
                             "abstract":abstract,"source":label,"access_kind":"open",
                             "access_link":link or f"https://www.{server}.org","scihub":None,
-                            "oneliner":ai_oneliner(title,abstract)})
+                            "oneliner":None})
     except: pass
     return results
 
@@ -663,7 +687,7 @@ def search_scopus(query, max_r, y_from, y_to, seen):
                         "quartile":get_quartile(pub),"doi":doi,"pmid":None,
                         "cited_by":cited,"abstract":abstract,"source":"Scopus",
                         "access_kind":kind,"access_link":link,"scihub":scihub,
-                        "oneliner":ai_oneliner(title,abstract)})
+                        "oneliner":None})
         time.sleep(0.2)
     return results
 
@@ -694,7 +718,7 @@ def search_wos(query, max_r, y_from, y_to, seen):
                         "quartile":get_quartile(journal),"doi":doi,"pmid":None,
                         "abstract":abstract,"source":"Web of Science",
                         "access_kind":kind,"access_link":link,"scihub":scihub,
-                        "oneliner":ai_oneliner(title,abstract)})
+                        "oneliner":None})
         time.sleep(0.2)
     return results
 
@@ -746,6 +770,99 @@ def do_export(articles, query, fmt, synthesis=""):
     return paths
 
 # ══════════════════════════════════════════════════════════════════════════════
+#  ZOTERO EXPORT  (via the local connector on port 23119)
+# ══════════════════════════════════════════════════════════════════════════════
+
+ZOTERO_CONNECTOR = "http://127.0.0.1:23119"
+
+def _parse_creators(authors_str):
+    """
+    Turn our 'Lastname, F.; Lastname2, G.; ...' author string into Zotero's
+    creators array: [{creatorType, firstName, lastName}, ...].
+    Handles the ' et al.' suffix and single-field names gracefully.
+    """
+    creators = []
+    if not authors_str:
+        return creators
+    cleaned = authors_str.replace(" et al.", "").strip()
+    for chunk in cleaned.split(";"):
+        name = chunk.strip()
+        if not name:
+            continue
+        if "," in name:
+            last, first = name.split(",", 1)
+            creators.append({"creatorType":"author",
+                             "firstName":first.strip(),
+                             "lastName":last.strip()})
+        else:
+            # No comma — store as a single-field name (Zotero supports this)
+            creators.append({"creatorType":"author", "name":name})
+    return creators
+
+def article_to_zotero_item(a):
+    """Map one of our article dicts to a Zotero journalArticle item."""
+    item = {
+        "itemType":         "journalArticle",
+        "title":            a.get("title",""),
+        "creators":         _parse_creators(a.get("authors","")),
+        "publicationTitle": a.get("journal",""),
+        "date":             str(a.get("year","")),
+        "abstractNote":     a.get("abstract","") or "",
+        "tags":             [{"tag": "MedSearch"}],
+    }
+    if a.get("doi"):
+        item["DOI"] = a["doi"]
+        item["url"] = f"https://doi.org/{a['doi']}"
+    elif a.get("pmid"):
+        item["url"] = f"https://pubmed.ncbi.nlm.nih.gov/{a['pmid']}/"
+    if a.get("pmid"):
+        # store PMID in the Extra field, a common convention
+        item["extra"] = f"PMID: {a['pmid']}"
+    return item
+
+def zotero_ping():
+    """Return True if the Zotero desktop app's connector is reachable."""
+    try:
+        req = urllib.request.Request(f"{ZOTERO_CONNECTOR}/connector/ping",
+                                     headers={"User-Agent":"MedSearch"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+def zotero_save(articles):
+    """
+    POST items to the local Zotero connector's /connector/saveItems endpoint.
+    Returns (ok, message). Zotero must be open with the connector available.
+    """
+    items = [article_to_zotero_item(a) for a in articles]
+    payload = json.dumps({
+        "items": items,
+        "uri":   "https://medsearch.local",
+        "sessionID": f"medsearch-{int(time.time())}",
+    }).encode()
+    req = urllib.request.Request(
+        f"{ZOTERO_CONNECTOR}/connector/saveItems",
+        data=payload,
+        headers={"Content-Type":"application/json",
+                 "User-Agent":"MedSearch",
+                 "X-Zotero-Connector-API-Version":"3"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return True, f"{len(items)} item(s) sent to Zotero."
+    except urllib.error.HTTPError as e:
+        if e.code == 201:
+            return True, f"{len(items)} item(s) sent to Zotero."
+        body = ""
+        try: body = e.read().decode()[:200]
+        except: pass
+        return False, f"Zotero returned error {e.code}. {body}"
+    except Exception as e:
+        return False, f"Could not reach Zotero: {e}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #  SESSION STORE  (in-memory, per-process)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -761,7 +878,8 @@ def index():
                            ai_on=bool(CONFIG.get("anthropic_api_key")),
                            history=SESSION["history"][-10:],
                            saved=load_saved(),
-                           show_onboarding=not CONFIG.get("onboarding_seen", False))
+                           show_onboarding=not CONFIG.get("onboarding_seen", False),
+                           app_version=get_local_version())
 
 @app.route("/onboarding/dismiss", methods=["POST"])
 def onboarding_dismiss():
@@ -958,6 +1076,10 @@ def search_stream():
     def generate():
         seen = make_dedup_set()
         all_results = []
+        ai_on = bool((CONFIG.get("anthropic_api_key","") or "").strip())
+
+        # Send an initial padding comment to defeat buffering in some webviews.
+        yield ":" + (" " * 2048) + "\n\n"
 
         # 1. MeSH first (fast, gives the user something immediately)
         if "pubmed" in sources or "all" in sources:
@@ -966,13 +1088,16 @@ def search_stream():
 
         runners = make_runners(seen)
         total_sources = len(runners)
+        global_idx = 0   # running index assigned to each article
 
-        # 3. Each source — announce start, then emit its articles
+        # Each source: announce start → emit each article card immediately →
+        # then stream one-liners as they finish (cards fill in live).
         for i, (key, label, fn) in enumerate(runners, 1):
             yield "data: " + json.dumps({
                 "type":"source_start", "source":label,
                 "index":i, "total":total_sources
             }) + "\n\n"
+            yield ":keep-alive\n\n"
             try:
                 r = fn()
                 res = r[0] if isinstance(r, tuple) else r
@@ -981,19 +1106,57 @@ def search_stream():
                 res = []; total_pubmed = 0
                 yield "data: " + json.dumps({"type":"source_error","source":label,"text":str(e)}) + "\n\n"
 
-            all_results.extend(res)
-            SESSION["articles"] = all_results   # keep session live for synthesis/export
+            # Assign global indices and emit each card right away (no one-liner yet)
+            indexed = []
+            for a in res:
+                a["_idx"] = global_idx
+                indexed.append(a)
+                all_results.append(a)
+                global_idx += 1
+                yield "data: " + json.dumps({"type":"article","source":label,"article":a}) + "\n\n"
+            SESSION["articles"] = all_results
+
+            # Tell the client this source is done arriving (spinner → count)
             yield "data: " + json.dumps({
                 "type":"source_done", "source":label,
-                "articles":res, "total_pubmed":total_pubmed,
+                "count":len(res), "total_pubmed":total_pubmed,
                 "running_count":len(all_results)
             }) + "\n\n"
+            yield ":keep-alive\n\n"
 
-        # 4. Final done event
+            # Now stream one-liners as they complete, patching each card live.
+            if ai_on:
+                targets = [a for a in indexed if a.get("abstract") and not a.get("oneliner")]
+                if targets:
+                    try:
+                        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                            future_to_idx = {
+                                ex.submit(ai_oneliner, a.get("title",""), a.get("abstract","")): a["_idx"]
+                                for a in targets
+                            }
+                            for fut in concurrent.futures.as_completed(future_to_idx):
+                                idx = future_to_idx[fut]
+                                try: ol = fut.result()
+                                except Exception: ol = None
+                                if ol:
+                                    # update session copy too
+                                    for a in all_results:
+                                        if a.get("_idx") == idx: a["oneliner"] = ol; break
+                                    yield "data: " + json.dumps({
+                                        "type":"oneliner","idx":idx,"text":ol
+                                    }) + "\n\n"
+                    except Exception:
+                        pass
+
+        # Final done event
         yield "data: " + json.dumps({"type":"done","count":len(all_results)}) + "\n\n"
 
-    return Response(stream_with_context(generate()), mimetype="text/event-stream",
-                    headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+    resp = Response(stream_with_context(generate()), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache, no-transform"
+    resp.headers["X-Accel-Buffering"] = "no"
+    resp.headers["Connection"] = "keep-alive"
+    resp.headers["Content-Encoding"] = "none"   # prevent gzip buffering
+    return resp
 
 @app.route("/synthesis")
 def synthesis():
@@ -1047,6 +1210,22 @@ def export():
     paths = do_export(articles, query, fmt, synthesis)
     return jsonify({"paths": paths})
 
+@app.route("/export/zotero/check")
+def export_zotero_check():
+    """Tell the frontend whether Zotero's connector is reachable right now."""
+    return jsonify({"available": zotero_ping()})
+
+@app.route("/export/zotero", methods=["POST"])
+def export_zotero():
+    articles = SESSION.get("articles",[])
+    if not articles:
+        return jsonify({"ok": False, "message": "No articles to send."}), 200
+    if not zotero_ping():
+        return jsonify({"ok": False, "available": False,
+                        "message": "Zotero isn't running. Open the Zotero desktop app and try again."}), 200
+    ok, msg = zotero_save(articles)
+    return jsonify({"ok": ok, "available": True, "message": msg})
+
 @app.route("/settings", methods=["GET","POST"])
 def settings():
     global CONFIG
@@ -1057,8 +1236,18 @@ def settings():
             if k in data and data[k]: CONFIG[k] = data[k].strip()
         save_config(CONFIG)
         return jsonify({"ok": True})
-    safe = {k: ("*"*(len(v)-4)+v[-4:] if len(v)>4 else ("set" if v else ""))
-            for k,v in CONFIG.items() if isinstance(v,str)}
+    # Mask API keys (show only last 4 chars); the email isn't sensitive so
+    # return it in full so the user can see and verify it.
+    safe = {}
+    for k, v in CONFIG.items():
+        if not isinstance(v, str):
+            continue
+        if k == "unpaywall_email":
+            safe[k] = v
+        elif len(v) > 4:
+            safe[k] = "*"*(len(v)-4) + v[-4:]
+        else:
+            safe[k] = "set" if v else ""
     return jsonify(safe)
 
 @app.route("/history")
@@ -1152,7 +1341,7 @@ if __name__ == "__main__":
         # Start Flask in a background thread
         t = threading.Thread(target=run_server, daemon=True)
         t.start()
-        print(f"\n  🔬  MedSearch v4.0  —  native window on {URL}\n")
+        print(f"\n  🔬  MedSearch {LOCAL_VERSION}  —  native window on {URL}\n")
         webview.create_window(
             "MedSearch",
             URL,
@@ -1162,7 +1351,7 @@ if __name__ == "__main__":
         webview.start()   # blocks until window closed; then process exits cleanly
     except ImportError:
         import webbrowser
-        print("\n  🔬  MedSearch v4.0  —  starting…")
+        print(f"\n  🔬  MedSearch {LOCAL_VERSION}  —  starting…")
         print(f"  (pywebview not installed — opening in browser instead)")
         print(f"  Open: {URL}\n")
         threading.Timer(1.2, lambda: webbrowser.open(URL)).start()

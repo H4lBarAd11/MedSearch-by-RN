@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MedSearch — Riccardo Nevoso</title>
+<title>MedSearch — RN</title>
 <style>
   /* ── Reset & Base ───────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -72,7 +72,7 @@
     border-bottom: 1px solid var(--border);
   }
   .logo-title {
-    font-size: 1.15rem;
+    font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--text);
@@ -780,6 +780,30 @@
     transition: color var(--transition);
   }
   .synthesis-close:hover { color: var(--text); }
+  .synthesis-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .synthesis-stop {
+    background: var(--red-tint);
+    border: 1px solid var(--red);
+    color: var(--red);
+    font-family: var(--font);
+    font-size: 0.72rem;
+    font-weight: bold;
+    padding: 3px 10px;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+  .synthesis-stop:hover { background: var(--red); color: #fff; }
+
+  /* Search button in 'Stop' state */
+  .search-btn.stop-btn {
+    background: var(--red);
+  }
+  .search-btn.stop-btn:hover { background: var(--red); filter: brightness(0.92); }
   .synthesis-text {
     font-size: 0.85rem;
     color: var(--text2);
@@ -1023,6 +1047,12 @@
   }
   .settings-field input:focus { border-color: var(--accent); }
   .settings-field input::placeholder { color: var(--text3); font-family: var(--font); }
+  /* A field with a key already saved gets a green-tinted cue */
+  .settings-field input.has-saved {
+    border-color: var(--green);
+    background: var(--green-tint);
+  }
+  .settings-field input.has-saved::placeholder { color: var(--green); }
   .settings-footer {
     padding: 14px 20px;
     border-top: 1px solid var(--border);
@@ -1073,6 +1103,44 @@
   .export-opt input[type=radio] { accent-color: var(--accent); }
   .export-opt-label { font-size: 0.83rem; }
   .export-opt-sub { font-size: 0.72rem; color: var(--text3); }
+
+  /* Zotero direct-export row */
+  .zotero-export-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--accent-tint);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+  }
+  .zotero-info { flex: 1; min-width: 0; }
+  .zotero-send-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .zotero-send-btn:disabled { opacity: 0.55; cursor: default; }
+  .zotero-export-row.unavailable {
+    background: var(--bg3);
+    border-color: var(--border);
+  }
+  .export-divider {
+    display: flex;
+    align-items: center;
+    text-align: center;
+    color: var(--text3);
+    font-size: 0.72rem;
+    margin: 2px 0;
+  }
+  .export-divider::before,
+  .export-divider::after {
+    content: '';
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+  }
+  .export-divider span { padding: 0 12px; }
+
   .export-success {
     padding: 14px 20px;
     font-size: 0.8rem;
@@ -1333,7 +1401,7 @@
   <aside class="sidebar">
     <div class="logo">
       <div class="logo-title">Med<span>Search</span></div>
-      <div class="logo-sub">Riccardo Nevoso · v4.0</div>
+      <div class="logo-sub">RN · {{ app_version }}</div>
     </div>
 
     <div class="sidebar-section">Databases</div>
@@ -1498,7 +1566,10 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     <div class="synthesis-panel" id="synthesisPanel">
       <div class="synthesis-header">
         <span class="synthesis-title">✦ AI Research Synthesis</span>
-        <button class="synthesis-close" onclick="closeSynthesis()">✕</button>
+        <div class="synthesis-header-actions">
+          <button class="synthesis-stop" id="synthesisStopBtn" onclick="stopSynthesis()" style="display:none">■ Stop</button>
+          <button class="synthesis-close" onclick="closeSynthesis()">✕</button>
+        </div>
       </div>
       <div class="synthesis-text" id="synthesisText"></div>
     </div>
@@ -1576,6 +1647,17 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
       <button class="modal-close" onclick="closeExport()">✕</button>
     </div>
     <div class="export-options">
+      <!-- Direct-to-Zotero (one click, no file) -->
+      <div class="zotero-export-row" id="zoteroRow">
+        <div class="zotero-info">
+          <div class="export-opt-label">📚 Send directly to Zotero</div>
+          <div class="export-opt-sub" id="zoteroStatus">Adds all results straight into your Zotero library.</div>
+        </div>
+        <button class="btn-primary zotero-send-btn" id="zoteroSendBtn" onclick="sendToZotero()">Send to Zotero</button>
+      </div>
+
+      <div class="export-divider"><span>or save as a file</span></div>
+
       <label class="export-opt">
         <input type="radio" name="exportFmt" value="md" checked>
         <div>
@@ -1587,7 +1669,7 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
         <input type="radio" name="exportFmt" value="bib">
         <div>
           <div class="export-opt-label">BibTeX (.bib)</div>
-          <div class="export-opt-sub">Import directly into Zotero, Mendeley, LaTeX</div>
+          <div class="export-opt-sub">Import into Zotero, Mendeley, LaTeX</div>
         </div>
       </label>
       <label class="export-opt">
@@ -1607,7 +1689,7 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     </div>
     <div class="settings-footer">
       <button class="btn-secondary" onclick="closeExport()">Cancel</button>
-      <button class="btn-primary" onclick="doExport()">Export</button>
+      <button class="btn-primary" onclick="doExport()">Save file</button>
     </div>
     <div class="export-success" id="exportSuccess" style="display:none"></div>
   </div>
@@ -1920,6 +2002,8 @@ if (_strictEl) {
 }
 
 // ── Search (progressive streaming) ─────────────────────────────────────────
+let searchAbortController = null;
+
 function runSearch() {
   const query = document.getElementById('searchInput').value.trim();
   const dbs   = getSelectedDBs();
@@ -1928,9 +2012,11 @@ function runSearch() {
   if (searchRunning) return;
 
   searchRunning = true;
-  document.getElementById('searchBtn').disabled = true;
+  setSearchButtonStop(true);
   allArticles = [];
   closeSynthesis();
+
+  searchAbortController = new AbortController();
 
   lastSearchParams = {
     query,
@@ -1949,7 +2035,8 @@ function runSearch() {
   fetch('/search_stream', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(lastSearchParams)
+    body: JSON.stringify(lastSearchParams),
+    signal: searchAbortController.signal
   }).then(response => {
     const reader  = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1974,11 +2061,63 @@ function runSearch() {
     }
     return pump();
   }).catch(e => {
+    if (e.name === 'AbortError') {
+      // User stopped the search — keep whatever results arrived
+      setStatus('done', `Search stopped · ${allArticles.length} result${allArticles.length===1?'':'s'} kept`);
+      cleanupAfterSearch();
+      return;
+    }
     setStatus('error', 'Search failed: ' + e.message);
     showToast('Search error: ' + e.message, 'red');
-    searchRunning = false;
-    document.getElementById('searchBtn').disabled = false;
+    cleanupAfterSearch();
   });
+}
+
+function stopSearch() {
+  if (searchAbortController) {
+    searchAbortController.abort();
+    searchAbortController = null;
+  }
+}
+
+function cleanupAfterSearch() {
+  searchRunning = false;
+  setSearchButtonStop(false);
+  // Any source still showing a spinner was interrupted — convert it to a count
+  // (or remove the group if it never produced any cards).
+  document.querySelectorAll('.source-group').forEach(g => {
+    const body = g.querySelector('.source-body');
+    const spin = g.querySelector('.source-spinner');
+    const cards = body ? body.querySelectorAll('.article-card').length : 0;
+    if (spin) {
+      if (cards > 0) {
+        spin.outerHTML = `<span class="source-count">${cards}</span>`;
+      } else {
+        g.remove();   // interrupted before any results
+      }
+    } else if (body && !body.children.length) {
+      g.remove();
+    }
+  });
+  const prog = document.getElementById('searchProgress');
+  if (prog) prog.textContent = '';
+}
+
+// Toggle the Search button between "Search" and "Stop" states
+function setSearchButtonStop(isStop) {
+  const btn = document.getElementById('searchBtn');
+  if (!btn) return;
+  if (isStop) {
+    btn.textContent = 'Stop';
+    btn.classList.add('stop-btn');
+    btn.disabled = false;
+    btn.onclick = stopSearch;
+  } else {
+    btn.textContent = 'Search';
+    btn.classList.remove('stop-btn');
+    btn.disabled = false;
+    btn.onclick = runSearch;
+  }
 }
 
 // Build the empty results shell with a sticky header
@@ -2010,15 +2149,21 @@ function handleSearchEvent(ev) {
     setStatus('searching', `Searching ${ev.source}… (${ev.index}/${ev.total})`);
     document.getElementById('searchProgress').textContent =
       `· searching ${ev.source} (${ev.index}/${ev.total})`;
-    // Add a placeholder group with a spinner
     addSourcePlaceholder(ev.source);
   }
+  else if (ev.type === 'article') {
+    appendArticleCard(ev.source, ev.article);
+    document.getElementById('runningCount').textContent = allArticles.length;
+  }
+  else if (ev.type === 'oneliner') {
+    patchOneliner(ev.idx, ev.text);
+  }
   else if (ev.type === 'source_done') {
-    fillSourceGroup(ev.source, ev.articles);
+    finalizeSourceGroup(ev.source, ev.count);
     document.getElementById('runningCount').textContent = ev.running_count;
   }
   else if (ev.type === 'source_error') {
-    fillSourceGroup(ev.source, [], ev.text);
+    finalizeSourceGroup(ev.source, 0, ev.text);
   }
   else if (ev.type === 'done') {
     document.getElementById('runningCount').textContent = ev.count;
@@ -2040,53 +2185,80 @@ function addSourcePlaceholder(source) {
       ${sourceIcon(source)} ${source}
       <span class="source-spinner" id="spin_${id}">searching…</span>
     </div>
-    <div class="source-body" id="body_${id}">
-      <div class="loading-card"><div class="loading-line med"></div>
-        <div class="loading-line short"></div></div>
-    </div>`;
+    <div class="source-body" id="body_${id}"></div>`;
   groups.appendChild(grp);
 }
 
-function fillSourceGroup(source, articles, errorText) {
+// Append a single article card the moment it arrives
+function appendArticleCard(source, article) {
+  const id   = 'grp_' + source.replace(/\W/g,'');
+  const body = document.getElementById('body_' + id);
+  if (!body) return;
+  allArticles[article._idx] = article;   // store by global index
+  const card = makeCard(article);
+  card.id = 'card_' + article._idx;
+  card.style.animation = 'fadeInUp 0.3s ease';
+  body.appendChild(card);
+}
+
+// Patch a one-liner into an already-displayed card
+function patchOneliner(idx, text) {
+  if (allArticles[idx]) allArticles[idx].oneliner = text;
+  const card = document.getElementById('card_' + idx);
+  if (!card) return;
+  // Reuse the same slot makeCard would have produced (.ai-oneliner)
+  let slot = card.querySelector('.ai-oneliner');
+  if (!slot) {
+    slot = document.createElement('div');
+    slot.className = 'ai-oneliner';
+    // place after the authors line, or after the meta row, else after title
+    const anchor = card.querySelector('.article-authors')
+                || card.querySelector('.article-meta')
+                || card.querySelector('.article-title');
+    if (anchor && anchor.parentNode) {
+      anchor.parentNode.insertBefore(slot, anchor.nextSibling);
+    } else {
+      card.appendChild(slot);
+    }
+  }
+  slot.innerHTML = `✦ ${escHtml(text)}`;
+  slot.style.animation = 'fadeInUp 0.25s ease';
+}
+
+// When a source finishes: turn spinner into a count, handle empty/error
+function finalizeSourceGroup(source, count, errorText) {
   const id   = 'grp_' + source.replace(/\W/g,'');
   const grp  = document.getElementById(id);
   if (!grp) return;
   const spin = document.getElementById('spin_' + id);
   const body = document.getElementById('body_' + id);
 
-  // Assign global indices for explain/cards
-  const startIdx = allArticles.length;
-  articles.forEach(a => allArticles.push(a));
-
-  if (spin) spin.outerHTML = `<span class="source-count">${articles.length}</span>`;
-
   if (errorText) {
-    body.innerHTML = `<div class="source-error">⚠ ${escHtml(errorText)}</div>`;
+    if (spin) spin.outerHTML = `<span class="source-count">0</span>`;
+    if (body) body.innerHTML = `<div class="source-error">⚠ ${escHtml(errorText)}</div>`;
     return;
   }
-  if (!articles.length) {
+  if (spin) spin.outerHTML = `<span class="source-count">${count}</span>`;
+  if (count === 0 && body) {
     body.innerHTML = `<div class="source-empty">No results from this source.</div>`;
-    return;
   }
-  body.innerHTML = '';
-  articles.forEach((a, i) => {
-    const card = makeCard({...a, _idx: startIdx + i});
-    card.style.animation = 'fadeInUp 0.3s ease';
-    body.appendChild(card);
-  });
 }
 
 function finishSearch(query) {
   searchRunning = false;
-  document.getElementById('searchBtn').disabled = false;
+  setSearchButtonStop(false);
+  searchAbortController = null;
   updateHistory(query);
-  const n = allArticles.length;
+  const n = allArticles.filter(Boolean).length;
   document.getElementById('searchProgress').textContent = '';
   setStatus('done', `Found ${n} unique article${n===1?'':'s'}`);
 
-  // Remove any leftover empty placeholder groups
+  // Convert any lingering spinners (e.g. a source that returned 0) to counts
   document.querySelectorAll('.source-group').forEach(g => {
     const body = g.querySelector('.source-body');
+    const spin = g.querySelector('.source-spinner');
+    const cards = body ? body.querySelectorAll('.article-card').length : 0;
+    if (spin) spin.outerHTML = `<span class="source-count">${cards}</span>`;
     if (body && !body.children.length) g.remove();
   });
 
@@ -2163,6 +2335,8 @@ function toggleAbstract(idx) {
 }
 
 // ── AI Synthesis ───────────────────────────────────────────────────────────
+let synthesisEventSource = null;
+
 function openSynthesis() {
   if (!allArticles.length) { showToast('Run a search first.', 'red'); return; }
   const panel = document.getElementById('synthesisPanel');
@@ -2170,19 +2344,34 @@ function openSynthesis() {
   panel.classList.add('open');
   text.textContent = '';
   synthesisOpen = true;
+  document.getElementById('synthesisStopBtn').style.display = '';
 
   const es = new EventSource('/synthesis');
+  synthesisEventSource = es;
   es.onmessage = e => {
     const d = JSON.parse(e.data);
     if (d.type === 'chunk') { text.textContent += d.text; }
-    if (d.type === 'done')  { es.close(); }
-    if (d.type === 'error') { text.textContent = 'Error: ' + d.text; es.close(); }
+    if (d.type === 'done')  { es.close(); synthesisEventSource = null; document.getElementById('synthesisStopBtn').style.display = 'none'; }
+    if (d.type === 'error') { text.textContent = 'Error: ' + d.text; es.close(); synthesisEventSource = null; document.getElementById('synthesisStopBtn').style.display = 'none'; }
     document.getElementById('synthesisPanel').scrollTop = 9999;
   };
-  es.onerror = () => es.close();
+  es.onerror = () => { es.close(); synthesisEventSource = null; document.getElementById('synthesisStopBtn').style.display = 'none'; };
+}
+
+function stopSynthesis() {
+  if (synthesisEventSource) {
+    synthesisEventSource.close();
+    synthesisEventSource = null;
+  }
+  const text = document.getElementById('synthesisText');
+  if (text && text.textContent) {
+    text.textContent += '\n\n— stopped —';
+  }
+  document.getElementById('synthesisStopBtn').style.display = 'none';
 }
 
 function closeSynthesis() {
+  stopSynthesis();   // also halts any in-progress generation
   document.getElementById('synthesisPanel').classList.remove('open');
   synthesisOpen = false;
 }
@@ -2351,10 +2540,65 @@ function openExport() {
   if (!allArticles.length) { showToast('No articles to export.', 'red'); return; }
   document.getElementById('exportSuccess').style.display = 'none';
   document.getElementById('exportOverlay').classList.add('open');
+  checkZoteroAvailable();
 }
 function closeExport() {
   document.getElementById('exportOverlay').classList.remove('open');
 }
+
+// Check whether the Zotero desktop app is running, update the row accordingly
+function checkZoteroAvailable() {
+  const row    = document.getElementById('zoteroRow');
+  const status = document.getElementById('zoteroStatus');
+  const btn    = document.getElementById('zoteroSendBtn');
+  status.textContent = 'Checking for Zotero…';
+  btn.disabled = true;
+  fetch('/export/zotero/check')
+    .then(r => r.json())
+    .then(d => {
+      if (d.available) {
+        row.classList.remove('unavailable');
+        status.textContent = 'Adds all results straight into your Zotero library.';
+        btn.disabled = false;
+      } else {
+        row.classList.add('unavailable');
+        status.innerHTML = 'Zotero isn\'t running. Open the Zotero desktop app, then reopen this.';
+        btn.disabled = true;
+      }
+    })
+    .catch(() => {
+      row.classList.add('unavailable');
+      status.textContent = 'Couldn\'t check Zotero status.';
+      btn.disabled = true;
+    });
+}
+
+async function sendToZotero() {
+  const btn = document.getElementById('zoteroSendBtn');
+  const status = document.getElementById('zoteroStatus');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/export/zotero', {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      status.innerHTML = '✓ ' + escHtml(data.message);
+      btn.textContent = 'Sent ✓';
+      showToast('Sent to Zotero!', 'green');
+      setTimeout(() => { btn.textContent = 'Send to Zotero'; btn.disabled = false; }, 2500);
+    } else {
+      status.innerHTML = '⚠ ' + escHtml(data.message);
+      btn.textContent = 'Send to Zotero';
+      btn.disabled = false;
+      showToast(data.message, 'red');
+    }
+  } catch(e) {
+    btn.textContent = 'Send to Zotero';
+    btn.disabled = false;
+    showToast('Zotero send failed: ' + e.message, 'red');
+  }
+}
+
 async function doExport() {
   const fmt = document.querySelector('input[name=exportFmt]:checked').value;
   const res  = await fetch('/export', {
@@ -2371,20 +2615,63 @@ async function doExport() {
 }
 
 // ── Settings ───────────────────────────────────────────────────────────────
-function openSettings() {
+async function openSettings() {
   document.getElementById('settingsOverlay').classList.add('open');
+  // Load which keys are already saved and indicate them in each field.
+  const fields = {
+    anthropic_api_key: 'set_anthropic',
+    pubmed_api_key:    'set_pubmed',
+    scopus_api_key:    'set_scopus',
+    wos_api_key:       'set_wos',
+    unpaywall_email:   'set_email',
+  };
+  // Reset all to their original placeholders first
+  for (const id of Object.values(fields)) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = '';
+      el.classList.remove('has-saved');
+      if (el.dataset.origPlaceholder) el.placeholder = el.dataset.origPlaceholder;
+      else el.dataset.origPlaceholder = el.placeholder;
+    }
+  }
+  try {
+    const res  = await fetch('/settings');
+    const data = await res.json();
+    for (const [key, id] of Object.entries(fields)) {
+      const el  = document.getElementById(id);
+      const val = data[key];
+      if (!el || !val) continue;
+      if (key === 'unpaywall_email') {
+        // Email isn't sensitive — show it in full so they can see/edit it
+        el.value = val;
+        el.classList.add('has-saved');
+      } else {
+        // API keys stay masked; show a "saved" indicator in the placeholder
+        const last4 = val.slice(-4);
+        el.placeholder = `✓ Saved (••••${last4}) — type to replace`;
+        el.classList.add('has-saved');
+      }
+    }
+  } catch(e) { /* if it fails, fields just show normal placeholders */ }
 }
 function closeSettings() {
   document.getElementById('settingsOverlay').classList.remove('open');
 }
 async function saveSettings() {
-  const payload = {
-    anthropic_api_key: document.getElementById('set_anthropic').value,
-    pubmed_api_key:    document.getElementById('set_pubmed').value,
-    scopus_api_key:    document.getElementById('set_scopus').value,
-    wos_api_key:       document.getElementById('set_wos').value,
-    unpaywall_email:   document.getElementById('set_email').value,
+  const raw = {
+    anthropic_api_key: document.getElementById('set_anthropic').value.trim(),
+    pubmed_api_key:    document.getElementById('set_pubmed').value.trim(),
+    scopus_api_key:    document.getElementById('set_scopus').value.trim(),
+    wos_api_key:       document.getElementById('set_wos').value.trim(),
+    unpaywall_email:   document.getElementById('set_email').value.trim(),
   };
+  // Only send fields the user actually filled in, so blank fields don't
+  // wipe previously-saved keys (the masked placeholder means "already set").
+  const payload = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v) payload[k] = v;
+  }
   await fetch('/settings', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
