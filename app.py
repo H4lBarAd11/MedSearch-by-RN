@@ -302,18 +302,24 @@ def ai_explain_stream(article):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _articles_context(articles, limit=15, abstract_chars=300):
-    """Build a compact text digest of the current results for grounding."""
+    """Build a compact text digest of the current results for grounding.
+
+    Default mode (used for chat): drops abstracts, keeps title + one-liner.
+    One-liners are AI-distilled summaries of the abstracts, so they capture
+    the key finding in ~25 words instead of 300+. This shrinks per-turn
+    context ~5x while preserving grounding quality.
+    """
     if not articles:
         return "(No search results are currently loaded.)"
     parts = []
     for i, a in enumerate(articles[:limit], 1):
-        ol = f"\n    Key point: {a['oneliner']}" if a.get("oneliner") else ""
-        parts.append(
-            f"[{i}] {a.get('title','')} ({a.get('year','n.d.')}, "
-            f"{a.get('journal','')}; {a.get('source','')})\n"
-            f"    Authors: {a.get('authors','Unknown')}{ol}\n"
-            f"    Abstract: {(a.get('abstract') or '')[:abstract_chars]}"
-        )
+        line = f"[{i}] {a.get('title','')} ({a.get('year','n.d.')}, {a.get('journal','')})"
+        if a.get("oneliner"):
+            line += f"\n    → {a['oneliner']}"
+        elif abstract_chars > 0 and a.get("abstract"):
+            # Fallback when one-liners aren't available (no AI key, or AI failed)
+            line += f"\n    Abstract: {(a.get('abstract') or '')[:abstract_chars]}"
+        parts.append(line)
     extra = f"\n\n(+{len(articles)-limit} more results not shown)" if len(articles) > limit else ""
     return "\n\n".join(parts) + extra
 
@@ -323,39 +329,51 @@ ASSISTANT_SYSTEM = (
     "answer clinical and scientific questions, and suggest directions for further "
     "inquiry.\n\n"
     "When the user's current search results are provided, ground your answers in "
-    "them and cite specific papers by their bracket number, e.g. [3]. If the results "
-    "don't contain the answer, say so plainly and then answer from general medical "
-    "knowledge, making clear you're doing so.\n\n"
-    "You can also answer general clinical questions that aren't about the loaded "
-    "results. Be accurate, concise, and appropriately cautious. Note important "
-    "uncertainties or contraindications. You are an aid to clinical reasoning, not a "
-    "substitute for professional judgment; do not give individualized treatment "
-    "directives for specific patients."
+    "them and cite specific papers by their bracket number, e.g. [3]. If you need "
+    "the full abstract of a specific paper to answer well, tell the user to click "
+    "'✦ Explain' on that card. If the results don't contain the answer, say so "
+    "plainly and answer from general medical knowledge, making clear you're doing so.\n\n"
+    "Be accurate, concise, and appropriately cautious. Default to 2-4 short "
+    "paragraphs; expand only if asked. Note important uncertainties or "
+    "contraindications. You are an aid to clinical reasoning, not a substitute for "
+    "professional judgment; do not give individualized treatment directives for "
+    "specific patients."
 )
 
 def assistant_chat_stream(messages, query, articles):
     """Stream a chat completion grounded in current results. `messages` is the
-    running conversation [{role, content}, ...] from the client."""
+    running conversation [{role, content}, ...] from the client.
+
+    Uses Anthropic prompt caching on the system block, so subsequent turns in
+    the same conversation pay ~10x less for the article context portion.
+    """
     key = (CONFIG.get("anthropic_api_key","") or "").strip()
     if not key:
         yield "data: " + json.dumps({"type":"error","text":"No API key set. Add your Anthropic key in Settings to use the assistant."}) + "\n\n"
         return
 
     context = _articles_context(articles)
-    system = (ASSISTANT_SYSTEM +
-              f"\n\n=== CURRENT SEARCH ===\nQuery: {query or '(none)'}\n"
-              f"Results currently loaded:\n{context}")
+    # Split system into a tiny instructions block (rarely changes) and a larger
+    # context block (the articles). We mark the context block as cacheable.
+    system_blocks = [
+        {"type":"text", "text": ASSISTANT_SYSTEM},
+        {"type":"text",
+         "text": f"=== CURRENT SEARCH ===\nQuery: {query or '(none)'}\nResults currently loaded:\n{context}",
+         "cache_control": {"type":"ephemeral"}}
+    ]
 
     payload = json.dumps({
         "model": "claude-sonnet-4-6",
-        "max_tokens": 1024,
+        "max_tokens": 512,            # 4-6 short paragraphs is plenty; ↓ from 1024
         "stream": True,
-        "system": system,
+        "system": system_blocks,
         "messages": messages,
     }).encode()
     req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload,
-        headers={"x-api-key":key,"anthropic-version":"2023-06-01",
-                 "content-type":"application/json"}, method="POST")
+        headers={"x-api-key":key,
+                 "anthropic-version":"2023-06-01",
+                 "content-type":"application/json"},
+        method="POST")
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
             for raw in r:
@@ -379,11 +397,12 @@ def assistant_chat_stream(messages, query, articles):
 
 def assistant_suggestions(query, articles):
     """Generate 3-4 short follow-up questions based on the current search.
-    Returns a list of strings (best-effort; empty list on failure)."""
+    Uses the cheaper Haiku model — this task doesn't need Sonnet's depth."""
     key = (CONFIG.get("anthropic_api_key","") or "").strip()
     if not key or not query:
         return []
-    context = _articles_context(articles, limit=10, abstract_chars=150)
+    # Use a tighter context for suggestions — titles + one-liners only
+    context = _articles_context(articles, limit=8, abstract_chars=0)
     prompt = (
         f'A clinician searched for: "{query}"\n\n'
         f"These results are loaded:\n{context}\n\n"
@@ -393,10 +412,17 @@ def assistant_suggestions(query, articles):
         "Respond ONLY with a JSON array of 4 strings, nothing else."
     )
     try:
-        r = _claude([{"role":"user","content":prompt}], max_tokens=300)
-        if not r: return []
-        text = json.loads(r.read().decode())["content"][0]["text"].strip()
-        # strip code fences if present
+        # Use Haiku for this cheap task — ~12x cheaper than Sonnet
+        payload = json.dumps({
+            "model": "claude-haiku-4-5",
+            "max_tokens": 250,
+            "messages": [{"role":"user","content":prompt}]
+        }).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=payload,
+            headers={"x-api-key":key,"anthropic-version":"2023-06-01",
+                     "content-type":"application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            text = json.loads(r.read().decode())["content"][0]["text"].strip()
         text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
         arr = json.loads(text)
         if isinstance(arr, list):
@@ -1332,8 +1358,8 @@ def assistant_chat_route():
     if not clean or clean[-1]["role"] != "user":
         return Response("data: "+json.dumps({"type":"error","text":"No question provided."})+"\n\n",
                         mimetype="text/event-stream")
-    # Keep only the last ~12 turns to bound the prompt size
-    clean = clean[-12:]
+    # Keep only the last ~6 turns to bound the prompt size (was 12)
+    clean = clean[-6:]
     query    = SESSION.get("query","")
     articles = SESSION.get("articles",[])
     return Response(stream_with_context(assistant_chat_stream(clean, query, articles)),
