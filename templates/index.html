@@ -70,7 +70,10 @@
   .logo {
     padding: 24px 20px 20px;
     border-bottom: 1px solid var(--border);
+    transition: background var(--transition);
   }
+  .logo:hover { background: var(--bg3); }
+  .logo:active { background: var(--accent-tint); }
   .logo-title {
     font-size: 1.5rem;
     font-weight: 700;
@@ -717,6 +720,69 @@
     border: 1px solid var(--yellow-tint2);
   }
   .link-btn.scihub:hover { background: var(--yellow-tint2); }
+
+  /* Sci-Hub button + alternates dropdown */
+  .scihub-group {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+  }
+  .scihub-group .link-btn.scihub {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+  }
+  .scihub-alt-toggle {
+    background: var(--yellow-tint);
+    color: var(--yellow);
+    border: 1px solid var(--yellow-tint2);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-top-right-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
+    padding: 0 7px;
+    font-size: 0.72rem;
+    line-height: 1;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: background var(--transition);
+  }
+  .scihub-alt-toggle:hover { background: var(--yellow-tint2); }
+  .scihub-alts {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 50;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-width: 160px;
+    padding: 4px;
+  }
+  .scihub-alts.open { display: block; }
+  .scihub-alts-label {
+    font-size: 0.66rem;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 5px 9px 3px;
+  }
+  .scihub-alt-item {
+    display: block;
+    padding: 6px 9px;
+    font-size: 0.78rem;
+    color: var(--text2);
+    text-decoration: none;
+    border-radius: 4px;
+    font-family: var(--mono);
+    transition: all var(--transition);
+  }
+  .scihub-alt-item:hover {
+    background: var(--yellow-tint);
+    color: var(--yellow);
+  }
   .link-btn.cite-btn {
     background: var(--green-tint);
     color: var(--green);
@@ -823,6 +889,154 @@
     padding: 24px;
   }
   .modal-overlay.open { display: flex; }
+
+  /* PDF viewer — larger modal, near-fullscreen */
+  .pdf-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(94,62,38,0.40);
+    z-index: 1700;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .pdf-overlay.open { display: flex; }
+  .pdf-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 960px;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(94,62,38,0.30);
+    overflow: hidden;
+  }
+  .pdf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    gap: 12px;
+  }
+  .pdf-title {
+    font-size: 0.86rem;
+    font-weight: bold;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pdf-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .pdf-action {
+    font-size: 0.76rem;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 14px;
+    transition: all var(--transition);
+  }
+  .pdf-action:hover { background: var(--accent-tint); }
+  .pdf-close {
+    background: none; border: none;
+    color: var(--text3);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: color var(--transition);
+  }
+  .pdf-close:hover { color: var(--text); }
+  .pdf-body {
+    flex: 1;
+    position: relative;
+    background: var(--bg4);
+    overflow: auto;
+  }
+  .pdf-canvas-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    min-height: 100%;
+  }
+  .pdf-canvas-container canvas {
+    box-shadow: 0 2px 12px rgba(94,62,38,0.18);
+    background: #fff;
+    max-width: 100%;
+    height: auto;
+  }
+  .pdf-zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    margin-right: 14px;
+  }
+  .pdf-zoom-btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    width: 28px; height: 26px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+    font-family: var(--font);
+    transition: all var(--transition);
+  }
+  .pdf-zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .pdf-fit-btn { width: auto; padding: 0 10px; font-size: 0.74rem; }
+  .pdf-zoom-level {
+    font-size: 0.74rem;
+    color: var(--text3);
+    min-width: 42px;
+    text-align: center;
+    font-family: var(--mono);
+  }
+  .pdf-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    color: var(--text3);
+    font-size: 0.85rem;
+  }
+  .pdf-spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  .pdf-error {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 30px;
+    text-align: center;
+    color: var(--text2);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  .pdf-error .pdf-error-icon { font-size: 2rem; }
+  .pdf-error a { color: var(--accent); }
   .modal {
     background: var(--bg2);
     border: 1px solid var(--border2);
@@ -1588,6 +1802,14 @@
   .toast.green { border-color: var(--green-tint2); color: var(--green); }
   .toast.red   { border-color: var(--red-tint);  color: var(--red); }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Point PDF.js at its worker (required). Falls back gracefully if offline.
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 </head>
 <body>
 
@@ -1595,7 +1817,7 @@
 
   <!-- ── Sidebar ─────────────────────────────────────────────────────── -->
   <aside class="sidebar">
-    <div class="logo">
+    <div class="logo" onclick="resetToHome()" title="Back to home" style="cursor:pointer">
       <div class="logo-title">Med<span>Search</span></div>
       <div class="logo-sub">RN · {{ app_version }}</div>
     </div>
@@ -1615,16 +1837,6 @@
       <div class="db-item checked" data-db="arxiv">
         <div class="db-check"></div>
         <span class="db-name">arXiv</span>
-        <span class="db-badge free">Free</span>
-      </div>
-      <div class="db-item checked" data-db="medrxiv">
-        <div class="db-check"></div>
-        <span class="db-name">medRxiv</span>
-        <span class="db-badge free">Free</span>
-      </div>
-      <div class="db-item checked" data-db="biorxiv">
-        <div class="db-check"></div>
-        <span class="db-name">bioRxiv</span>
         <span class="db-badge free">Free</span>
       </div>
       <div class="db-item" data-db="scopus">
@@ -1782,6 +1994,33 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     </div>
     <div class="modal-body">
       <div class="modal-text" id="explainText">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PDF viewer modal ──────────────────────────────────────────────── -->
+<div class="pdf-overlay" id="pdfOverlay">
+  <div class="pdf-modal">
+    <div class="pdf-header">
+      <div class="pdf-title" id="pdfTitle">PDF</div>
+      <div class="pdf-zoom-controls" id="pdfZoomControls" style="display:none">
+        <button class="pdf-zoom-btn" onclick="pdfZoom(-1)" title="Zoom out">−</button>
+        <span class="pdf-zoom-level" id="pdfZoomLevel">100%</span>
+        <button class="pdf-zoom-btn" onclick="pdfZoom(1)" title="Zoom in">+</button>
+        <button class="pdf-zoom-btn pdf-fit-btn" onclick="pdfFitWidth()" title="Fit width">⤢ Fit</button>
+      </div>
+      <div class="pdf-header-actions">
+        <button class="pdf-action" id="pdfSaveBtn" onclick="savePdf()" title="Save PDF to your computer">⬇ Save</button>
+        <a class="pdf-action" id="pdfOpenExternal" href="#" target="_blank" title="Open in browser">↗ Browser</a>
+        <button class="pdf-close" onclick="closePdf()" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="pdf-body" id="pdfBody">
+      <div class="pdf-loading" id="pdfLoading">
+        <div class="pdf-spinner"></div>
+        <div id="pdfLoadingText">Loading PDF…</div>
+      </div>
+      <div class="pdf-canvas-container" id="pdfCanvasContainer" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -2359,6 +2598,46 @@ function scaffoldResults() {
     <div id="sourceGroups"></div>`;
 }
 
+// Reset the app to its initial state — like just-launched, but in-session
+// (databases, saved searches, recent history, settings all preserved).
+function resetToHome() {
+  // Stop any in-flight work
+  if (typeof stopSearch === 'function') stopSearch();
+  if (typeof closeSynthesis === 'function') closeSynthesis();
+
+  // Clear results & state
+  allArticles = [];
+  lastSearchParams = null;
+  resetAssistantSuggestions();
+
+  // Clear the search box and filters back to defaults
+  const q = document.getElementById('searchInput');
+  if (q) q.value = '';
+  const yf = document.getElementById('yearFrom');  if (yf) yf.value = '';
+  const yt = document.getElementById('yearTo');    if (yt) yt.value = '';
+  const mr = document.getElementById('maxResults');if (mr) mr.value = 10;
+  const strict = document.getElementById('strictToggle'); if (strict) strict.checked = true;
+  if (typeof updateQueryHint === 'function') updateQueryHint();
+
+  // Restore the welcome screen
+  const area = document.getElementById('resultsArea');
+  if (area) area.innerHTML = `
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">🔬</div>
+      <div class="empty-title">Start a literature search</div>
+      <div class="empty-sub">Select databases on the left, enter your query above, and press Search.</div>
+    </div>`;
+  setStatus('idle', 'Ready — select databases and enter a query');
+
+  // If the assistant panel is open, close it (and reset its history too)
+  if (assistantOpen) toggleAssistant();
+  assistantHistory = [];
+  renderAssistantMessages();
+
+  // Scroll to top
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
 function handleSearchEvent(ev) {
   if (ev.type === 'mesh' && ev.mesh && ev.mesh.length) {
     document.getElementById('meshSlot').innerHTML =
@@ -2511,11 +2790,32 @@ function makeCard(a) {
 
   let links = '';
   if (a.access_kind === 'open' && a.access_link)
-    links += `<a class="link-btn open-access" href="${a.access_link}" target="_blank">⬤ Free PDF</a>`;
+    links += `<button class="link-btn open-access" onclick="openPdf('${escAttr(a.access_link)}', '${escAttr(a.title || 'PDF')}')">⬤ Read PDF</button>`;
   if (a.access_kind === 'doi' && a.access_link)
     links += `<a class="link-btn doi" href="${a.access_link}" target="_blank">⬤ DOI</a>`;
-  if (a.scihub)
-    links += `<a class="link-btn scihub" href="${a.scihub}" target="_blank">Sci-Hub</a>`;
+  if (a.scihub && a.scihub.length) {
+    // Normalize: support old single-string format too (defensive)
+    const mirrors = Array.isArray(a.scihub) ? a.scihub : [a.scihub];
+    const primary = mirrors[0];
+    const alts = mirrors.slice(1);
+    if (alts.length) {
+      const altsHtml = alts.map(u => {
+        // pretty label: just the hostname
+        let host = u;
+        try { host = new URL(u).hostname; } catch(_) {}
+        return `<a class="scihub-alt-item" href="${u}" target="_blank">${escHtml(host)}</a>`;
+      }).join('');
+      links += `<span class="scihub-group">
+        <a class="link-btn scihub" href="${primary}" target="_blank">Sci-Hub</a><button class="scihub-alt-toggle" onclick="toggleScihubAlts(event, ${a._idx})" title="Other mirrors">▾</button>
+        <span class="scihub-alts" id="scihub_alts_${a._idx}">
+          <div class="scihub-alts-label">If this doesn't work, try:</div>
+          ${altsHtml}
+        </span>
+      </span>`;
+    } else {
+      links += `<a class="link-btn scihub" href="${primary}" target="_blank">Sci-Hub</a>`;
+    }
+  }
   if (a.pmid)
     links += `<a class="link-btn doi" href="https://pubmed.ncbi.nlm.nih.gov/${a.pmid}/" target="_blank">PubMed</a>`;
   if (a.nct_id)
@@ -2827,6 +3127,189 @@ function closeCitations() {
   document.getElementById('citeOverlay').classList.remove('open');
 }
 
+// ── PDF viewer (PDF.js — full zoom + fit-to-width) ──────────────────────────
+let pdfDoc = null;          // loaded PDF.js document
+let pdfScale = 1.0;         // current zoom scale
+let pdfFitScale = 1.0;      // the scale that fits the viewer width
+let pdfBytes = null;        // raw PDF data (for Save)
+let pdfFilename = 'article.pdf';
+
+function _slugifyPdfName(title) {
+  const base = (title || 'article').replace(/[^a-z0-9]+/gi, '_')
+                 .replace(/^_+|_+$/g, '').slice(0, 60).toLowerCase();
+  return (base || 'article') + '.pdf';
+}
+
+function openPdf(url, title) {
+  const overlay = document.getElementById('pdfOverlay');
+  const loading = document.getElementById('pdfLoading');
+  const titleEl = document.getElementById('pdfTitle');
+  const extLink = document.getElementById('pdfOpenExternal');
+  const container = document.getElementById('pdfCanvasContainer');
+  const zoomCtl = document.getElementById('pdfZoomControls');
+
+  titleEl.textContent = title || 'PDF';
+  extLink.href = url;
+  pdfFilename = _slugifyPdfName(title);
+  pdfBytes = null;
+  container.style.display = 'none';
+  container.innerHTML = '';
+  zoomCtl.style.display = 'none';
+  loading.style.display = 'flex';
+  document.getElementById('pdfLoadingText').textContent = 'Loading PDF…';
+  const oldErr = document.getElementById('pdfErrorPanel');
+  if (oldErr) oldErr.remove();
+
+  overlay.classList.add('open');
+
+  // Guard: PDF.js must have loaded (needs internet on first run)
+  if (!window.pdfjsLib) {
+    showPdfError('The PDF viewer library could not load (no internet connection?). You can still open the PDF in your browser.', url);
+    return;
+  }
+
+  const proxyUrl = '/pdf_proxy?url=' + encodeURIComponent(url);
+
+  fetch(proxyUrl)
+    .then(async res => {
+      const ct = res.headers.get('Content-Type') || '';
+      if (!res.ok || !ct.includes('pdf')) {
+        let msg = 'This PDF couldn\'t be displayed in the app.';
+        try { const j = await res.json(); if (j.message) msg = j.message; } catch(e){}
+        showPdfError(msg, url);
+        return null;
+      }
+      return res.arrayBuffer();
+    })
+    .then(async buf => {
+      if (!buf) return;
+      pdfBytes = buf.slice(0);          // keep a copy for Save (getDocument consumes it)
+      try {
+        pdfDoc = await pdfjsLib.getDocument({data: buf}).promise;
+        loading.style.display = 'none';
+        container.style.display = 'flex';
+        zoomCtl.style.display = 'flex';
+        // Default: fit to width
+        await computeFitScale();
+        pdfScale = pdfFitScale;
+        await renderAllPages();
+      } catch(e) {
+        showPdfError('Could not render this PDF: ' + e.message, url);
+      }
+    })
+    .catch(e => showPdfError('Could not load the PDF: ' + e.message, url));
+}
+
+// Save the currently-open PDF to disk (opens the browser's save dialog)
+function savePdf() {
+  if (!pdfBytes) { showToast('PDF still loading — try again in a moment.', 'red'); return; }
+  try {
+    const blob = new Blob([pdfBytes], {type: 'application/pdf'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = pdfFilename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch(e) {
+    showToast('Could not save the PDF: ' + e.message, 'red');
+  }
+}
+
+// Work out the scale at which page 1 fills the available width
+async function computeFitScale() {
+  if (!pdfDoc) return;
+  const page = await pdfDoc.getPage(1);
+  const unscaled = page.getViewport({scale: 1});
+  const body = document.getElementById('pdfBody');
+  // available width minus container padding (16px each side) and a little margin
+  const avail = body.clientWidth - 44;
+  pdfFitScale = Math.max(0.3, avail / unscaled.width);
+}
+
+async function renderAllPages() {
+  const container = document.getElementById('pdfCanvasContainer');
+  container.innerHTML = '';
+  updateZoomLabel();
+  if (!pdfDoc) return;
+  // Render with a device-pixel multiplier for crispness
+  const dpr = window.devicePixelRatio || 1;
+  for (let n = 1; n <= pdfDoc.numPages; n++) {
+    const page = await pdfDoc.getPage(n);
+    const viewport = page.getViewport({scale: pdfScale});
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width  = Math.floor(viewport.width  * dpr);
+    canvas.height = Math.floor(viewport.height * dpr);
+    canvas.style.width  = Math.floor(viewport.width)  + 'px';
+    canvas.style.height = Math.floor(viewport.height) + 'px';
+    container.appendChild(canvas);
+    await page.render({
+      canvasContext: ctx,
+      viewport,
+      transform: dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null
+    }).promise;
+  }
+}
+
+function updateZoomLabel() {
+  const lvl = document.getElementById('pdfZoomLevel');
+  if (lvl) lvl.textContent = Math.round(pdfScale * 100) + '%';
+}
+
+let _pdfRerenderTimer = null;
+function pdfZoom(dir) {
+  // No artificial cap — step by 20%, floor at 20%
+  const step = 0.2;
+  pdfScale = Math.max(0.2, pdfScale + dir * step);
+  updateZoomLabel();
+  // debounce re-render so rapid clicks don't stack
+  clearTimeout(_pdfRerenderTimer);
+  _pdfRerenderTimer = setTimeout(renderAllPages, 120);
+}
+
+async function pdfFitWidth() {
+  await computeFitScale();
+  pdfScale = pdfFitScale;
+  updateZoomLabel();
+  renderAllPages();
+}
+
+function showPdfError(message, url) {
+  const loading = document.getElementById('pdfLoading');
+  const container = document.getElementById('pdfCanvasContainer');
+  loading.style.display = 'none';
+  container.style.display = 'none';
+  const body = document.getElementById('pdfBody');
+  const old = document.getElementById('pdfErrorPanel');
+  if (old) old.remove();
+  const err = document.createElement('div');
+  err.className = 'pdf-error';
+  err.id = 'pdfErrorPanel';
+  err.innerHTML = `
+    <div class="pdf-error-icon">📄</div>
+    <div>${escHtml(message)}</div>
+    <a href="${escAttr(url)}" target="_blank">↗ Open in browser instead</a>`;
+  body.appendChild(err);
+}
+
+function closePdf() {
+  const overlay = document.getElementById('pdfOverlay');
+  overlay.classList.remove('open');
+  const container = document.getElementById('pdfCanvasContainer');
+  container.innerHTML = '';
+  pdfDoc = null;
+  pdfBytes = null;
+}
+// ESC closes the PDF viewer
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('pdfOverlay').classList.contains('open')) {
+    closePdf();
+  }
+});
+
 function renderCitations(data, article) {
   const body = document.getElementById('citeBody');
 
@@ -3116,7 +3599,20 @@ function toggleDotsMenu(id, event) {
 // click anywhere else closes menus
 document.addEventListener('click', () => {
   document.querySelectorAll('.dots-menu').forEach(m => m.classList.remove('open'));
+  document.querySelectorAll('.scihub-alts.open').forEach(m => m.classList.remove('open'));
 });
+
+// Reveal alternative Sci-Hub mirrors for one article card
+function toggleScihubAlts(event, idx) {
+  event.stopPropagation();
+  event.preventDefault();
+  const menu = document.getElementById('scihub_alts_' + idx);
+  if (!menu) return;
+  const wasOpen = menu.classList.contains('open');
+  // close any other open ones
+  document.querySelectorAll('.scihub-alts.open').forEach(m => m.classList.remove('open'));
+  if (!wasOpen) menu.classList.add('open');
+}
 
 // ── Delete individual recent query ─────────────────────────────────────────
 function deleteRecent(q, event) {

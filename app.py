@@ -33,19 +33,41 @@ DEFAULTS = {
     "scopus_api_key":    "",
     "wos_api_key":       "",
     "unpaywall_email":   "",
-    "scihub_mirrors":    ["https://sci-hub.se", "https://sci-hub.st", "https://sci-hub.ru"],
+    # Mirror priority order. sci-hub.se was DNS-blocked in Jan 2026, so the
+    # currently-active mirrors come first. We pass the full list to the UI so
+    # users can fall through to a backup if a mirror is unreachable.
+    "scihub_mirrors":    ["https://sci-hub.ru", "https://sci-hub.st", "https://sci-hub.ee"],
 }
+
+# Legacy mirror configurations we silently migrate to the current defaults
+# (old saved configs would otherwise keep pointing at the dead sci-hub.se).
+_LEGACY_BROKEN_MIRRORS = [
+    ["https://sci-hub.se", "https://sci-hub.st", "https://sci-hub.ru"],
+]
 
 def load_config():
     cfg = dict(DEFAULTS)
+    migrated = False
     if CONFIG_FILE.exists():
-        try: cfg.update(json.loads(CONFIG_FILE.read_text()))
+        try:
+            saved = json.loads(CONFIG_FILE.read_text())
+            cfg.update(saved)
+            # Migrate any config that still has the dead-mirror-first order
+            if cfg.get("scihub_mirrors") in _LEGACY_BROKEN_MIRRORS:
+                cfg["scihub_mirrors"] = list(DEFAULTS["scihub_mirrors"])
+                migrated = True
         except: pass
     for k, e in {"anthropic_api_key":"ANTHROPIC_API_KEY","pubmed_api_key":"NCBI_API_KEY",
                  "scopus_api_key":"SCOPUS_API_KEY","wos_api_key":"WOS_API_KEY",
                  "unpaywall_email":"UNPAYWALL_EMAIL"}.items():
         v = os.environ.get(e,"")
         if v: cfg[k] = v
+    if migrated:
+        # persist the fix so it doesn't keep migrating each launch
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        except: pass
     return cfg
 
 def save_config(cfg):
@@ -161,6 +183,12 @@ def resolve_access(doi):
     if oa:  return "open", oa
     if doi: return "doi",  f"https://doi.org/{doi}"
     return "none", None
+
+def scihub_links(doi):
+    """Return [primary_url, ...alternates] for a DOI, or [] if no DOI."""
+    if not doi: return []
+    mirrors = CONFIG.get("scihub_mirrors") or DEFAULTS["scihub_mirrors"]
+    return [f"{m}/{doi}" for m in mirrors]
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  AI
@@ -680,7 +708,7 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
         kind, link = resolve_access(doi)
-        scihub = f"{CONFIG['scihub_mirrors'][0]}/{doi}" if doi else None
+        scihub = scihub_links(doi)
         results.append({"title":title,"authors":authors,"year":year,"journal":journal,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":pmid,
                         "abstract":abstract,"source":source_label,"access_kind":kind,
@@ -816,7 +844,7 @@ def search_scopus(query, max_r, y_from, y_to, seen):
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
         kind, link = resolve_access(doi)
-        scihub = f"{CONFIG['scihub_mirrors'][0]}/{doi}" if doi else None
+        scihub = scihub_links(doi)
         results.append({"title":title,"authors":creator,"year":year,"journal":pub,
                         "quartile":get_quartile(pub),"doi":doi,"pmid":None,
                         "cited_by":cited,"abstract":abstract,"source":"Scopus",
@@ -847,7 +875,7 @@ def search_wos(query, max_r, y_from, y_to, seen):
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
         kind, link = resolve_access(doi)
-        scihub = f"{CONFIG['scihub_mirrors'][0]}/{doi}" if doi else None
+        scihub = scihub_links(doi)
         results.append({"title":title,"authors":authors,"year":year,"journal":journal,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":None,
                         "abstract":abstract,"source":"Web of Science",
@@ -1129,8 +1157,6 @@ def search():
         "cochrane":       lambda: search_cochrane(query, max_r, y_from, y_to, seen),
         "arxiv":          lambda: search_arxiv(query, max_r, y_from, y_to, seen),
         "clinicaltrials": lambda: search_clinicaltrials(query, max_r, y_from, y_to, seen),
-        "medrxiv":        lambda: search_biorxiv(query,"medrxiv",max_r,y_from,y_to,seen),
-        "biorxiv":        lambda: search_biorxiv(query,"biorxiv",max_r,y_from,y_to,seen),
         "scopus":         lambda: search_scopus(query, max_r, y_from, y_to, seen),
         "wos":            lambda: search_wos(query, max_r, y_from, y_to, seen),
     }
@@ -1199,12 +1225,6 @@ def search_stream():
         if "arxiv" in sources or "all" in sources:
             runners.append(("arxiv", "arXiv",
                             lambda: (search_arxiv(query, max_r, y_from, y_to, seen), 0)))
-        if "medrxiv" in sources or "all" in sources:
-            runners.append(("medrxiv", "medRxiv",
-                            lambda: (search_biorxiv(query,"medrxiv",max_r,y_from,y_to,seen), 0)))
-        if "biorxiv" in sources or "all" in sources:
-            runners.append(("biorxiv", "bioRxiv",
-                            lambda: (search_biorxiv(query,"biorxiv",max_r,y_from,y_to,seen), 0)))
         return runners
 
     def generate():
@@ -1365,6 +1385,56 @@ def assistant_chat_route():
     return Response(stream_with_context(assistant_chat_stream(clean, query, articles)),
                     mimetype="text/event-stream",
                     headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
+
+@app.route("/pdf_proxy")
+def pdf_proxy():
+    """
+    Fetch an open-access PDF server-side and stream it to the client.
+    This bypasses X-Frame-Options / CORS restrictions that block embedding
+    external PDFs directly in an iframe. Only used for OA links the app already
+    surfaced (we don't accept arbitrary user URLs from anywhere else).
+    """
+    url = request.args.get("url","").strip()
+    if not url or not url.lower().startswith(("http://","https://")):
+        return jsonify({"error":"Invalid URL"}), 400
+
+    # Light safety: only proxy if this URL is among the current session's
+    # known access links (prevents the proxy being used as an open relay).
+    known = set()
+    for a in SESSION.get("articles", []):
+        if a.get("access_link"): known.add(a["access_link"])
+        for m in (a.get("scihub") or []): known.add(m)
+    if url not in known:
+        return jsonify({"error":"URL not recognized from current results"}), 403
+
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/120.0 Safari/537.36",
+            "Accept":"application/pdf,*/*",
+        })
+        upstream = urllib.request.urlopen(req, timeout=30)
+        ctype = upstream.headers.get("Content-Type","").lower()
+        data = upstream.read()
+
+        # If we got HTML instead of a PDF (paywall/landing page), say so.
+        is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+        if not is_pdf:
+            return jsonify({"error":"not_pdf",
+                            "message":"This link returned a web page, not a direct PDF. "
+                                      "Opening it in your browser may work."}), 415
+
+        resp = Response(data, mimetype="application/pdf")
+        resp.headers["Content-Disposition"] = "inline; filename=article.pdf"
+        resp.headers["Cache-Control"] = "private, max-age=600"
+        return resp
+    except urllib.error.HTTPError as e:
+        return jsonify({"error":"fetch_failed",
+                        "message":f"Couldn't fetch the PDF (HTTP {e.code})."}), 502
+    except Exception as e:
+        return jsonify({"error":"fetch_failed",
+                        "message":f"Couldn't fetch the PDF: {e}"}), 502
 
 @app.route("/export", methods=["POST"])
 def export():
