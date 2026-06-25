@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  MedSearch v4.0 — GUI Launcher
-#  Run this to start the web interface. Opens automatically in your browser.
+#  MedSearch — Launcher (macOS / Linux)
+#  Sets up dependencies on first run, then opens MedSearch in a desktop window.
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Create venv if needed
+# Create a virtual environment on first run (avoids "externally managed" errors)
 if [ ! -d ".venv" ]; then
   echo "  Setting up environment (first run only)…"
   python3 -m venv .venv
@@ -15,13 +15,15 @@ fi
 
 source .venv/bin/activate
 
-# Install flask if needed
-python3 -c "import flask" 2>/dev/null || pip install --quiet flask
+# Install dependencies if anything is missing
+if ! python3 -c "import flask, webview" 2>/dev/null; then
+  echo "  Installing dependencies…"
+  pip install --quiet -r requirements.txt
+fi
 
 echo ""
-echo "  🔬  MedSearch v4.0"
-echo "  Starting… opening http://localhost:5050"
-echo "  Press Ctrl+C to stop."
+echo "  🔬  MedSearch"
+echo "  Opening in a desktop window… (close the window to quit)"
 echo ""
 
 python3 app.py

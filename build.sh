@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-#  MedSearch — Build Script (macOS / Linux)
-#  Creates a virtualenv automatically to avoid "externally managed" errors.
+#  MedSearch — Standalone Build (macOS / Linux)
+#  Bundles the app + its templates into a single executable using PyInstaller,
+#  so colleagues can run MedSearch without installing Python.
+#
+#  On macOS, prefer  make_app.sh  for a double-clickable MedSearch.app.
+#  Use this script for a portable single-file binary (or for Linux).
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo ""
-echo "  🔬  MedSearch Build Script (macOS / Linux)"
+echo "  🔬  MedSearch — Standalone Build (macOS / Linux)"
 echo "  ─────────────────────────────────────────────"
 
 # 1. Check Python
@@ -14,55 +21,51 @@ if ! command -v python3 &>/dev/null; then
   echo "  ✗  Python 3 not found. Install it from python.org"
   exit 1
 fi
-PY=$(python3 --version)
-echo "  ✓  Found $PY"
+echo "  ✓  Found $(python3 --version)"
 
-# 2. Create virtualenv if it doesn't exist yet
+# 2. Create / activate a virtualenv (keeps the build isolated)
 if [ ! -d ".venv" ]; then
   echo "  →  Creating virtual environment (.venv)…"
   python3 -m venv .venv
-  echo "  ✓  Virtual environment created"
-else
-  echo "  ✓  Virtual environment already exists"
 fi
-
-# 3. Activate it
 source .venv/bin/activate
-echo "  ✓  Virtual environment activated"
+echo "  ✓  Virtual environment active"
 
-# 4. Install PyInstaller inside the venv (no system interference)
-echo "  →  Installing PyInstaller…"
+# 3. Install the app's dependencies + PyInstaller
+echo "  →  Installing dependencies…"
+pip install --upgrade --quiet pip
+pip install --quiet -r requirements.txt
 pip install --upgrade --quiet pyinstaller
-echo "  ✓  PyInstaller ready"
+echo "  ✓  Dependencies ready"
 
-# 5. Build
-echo "  →  Building binary…"
+# 4. Build. The templates/ folder MUST be bundled or the UI won't load.
+#    --windowed keeps it GUI-only (no console window).
+echo "  →  Building MedSearch…"
+EXTRA=""
+[ -f "VERSION" ] && EXTRA="$EXTRA --add-data VERSION:."
+[ -f "icon.svg" ] && EXTRA="$EXTRA --add-data icon.svg:."
+
 python3 -m PyInstaller \
   --onefile \
-  --name medsearch \
-  --console \
+  --windowed \
+  --name MedSearch \
+  --add-data "templates:templates" \
+  $EXTRA \
   --clean \
-  medsearch.py
+  app.py
 
-# 6. Result
-DIST="dist/medsearch"
-if [ -f "$DIST" ]; then
-  chmod +x "$DIST"
+# 5. Result
+DIST="dist/MedSearch"
+if [ -e "$DIST" ] || [ -e "$DIST.app" ]; then
   echo ""
   echo "  ✓  Build complete!"
-  echo "  ✓  Binary: $(pwd)/$DIST"
+  echo "  ✓  Output is in: $(pwd)/dist/"
   echo ""
-  echo "  To run immediately:"
-  echo "    ./dist/medsearch"
-  echo ""
-  echo "  To install system-wide (optional):"
-  echo "    sudo cp dist/medsearch /usr/local/bin/medsearch"
-  echo "    medsearch   # from any terminal, anywhere"
+  echo "  Share the contents of the dist/ folder with colleagues."
   echo ""
 else
-  echo "  ✗  Build failed. Check output above."
+  echo "  ✗  Build failed. Check the output above."
   exit 1
 fi
 
-# 7. Deactivate venv (clean exit)
 deactivate

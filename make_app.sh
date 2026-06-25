@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═════════════════════════════════════════════════════════════════════════════
-#  MedSearch — macOS .app Builder
+#  MedSearch — macOS .app Builder  (native window, no Terminal)
 #  Creates "MedSearch.app" — a double-clickable launcher with a custom icon.
 #  Run this ONCE on your Mac. The resulting .app can be copied to /Applications
 #  or dragged to the Dock.
@@ -44,20 +44,26 @@ cat > "$APP_DIR/Contents/Info.plist" << 'PLIST'
 PLIST
 
 # ── 3. The launcher executable ──
-# This is what runs when the user double-clicks the app.
+# Runs the app directly in the background — no Terminal window, no Finder windows.
+# Uses the project's virtualenv and ensures flask + pywebview are present.
 cat > "$APP_DIR/Contents/MacOS/launcher" << LAUNCHER
 #!/usr/bin/env bash
-# Find the real project directory (where launch_gui.sh lives)
 PROJECT_DIR="$SCRIPT_DIR"
 cd "\$PROJECT_DIR"
 
-# Open Terminal and run the GUI launcher, so the user sees the server output
-osascript <<APPLESCRIPT
-tell application "Terminal"
-    activate
-    do script "cd '\$PROJECT_DIR' && bash launch_gui.sh"
-end tell
-APPLESCRIPT
+# Ensure virtualenv exists
+if [ ! -d ".venv" ]; then
+    /usr/bin/env python3 -m venv .venv
+fi
+source .venv/bin/activate
+
+# Ensure dependencies (quiet; only installs the first time)
+python3 -c "import flask"   2>/dev/null || pip install --quiet flask
+python3 -c "import webview" 2>/dev/null || pip install --quiet pywebview
+
+# Launch the app. PyWebView opens a native window; no browser, no Terminal.
+# Logs go to a hidden file instead of a visible Terminal window.
+python3 app.py > "\$PROJECT_DIR/.medsearch_app.log" 2>&1
 LAUNCHER
 
 chmod +x "$APP_DIR/Contents/MacOS/launcher"
@@ -94,6 +100,6 @@ echo "    • Double-click MedSearch.app to test it"
 echo "    • Drag it to /Applications to install system-wide"
 echo "    • Drag it to your Dock for one-click access"
 echo ""
-echo "  Note: On first launch, macOS may warn it's from an"
-echo "  unidentified developer. Right-click → Open to bypass once."
+echo "  Note: first launch installs pywebview (~10-15s), then the"
+echo "  native window opens. Every launch after is instant."
 echo ""

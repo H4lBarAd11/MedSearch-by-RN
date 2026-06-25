@@ -1,0 +1,5 @@
+# MedSearch dependencies
+# Install with:  pip install -r requirements.txt
+
+flask>=3.0          # web framework powering the local backend
+pywebview>=4.4      # native desktop window (falls back to browser if absent)

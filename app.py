@@ -14,8 +14,18 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify, stream_with_context
 
-# ── resolve path so app.py can be run from anywhere ──────────────────────────
-BASE_DIR = Path(__file__).parent.resolve()
+# ── resolve paths so app.py works both as a script and as a frozen build ─────
+# When bundled by PyInstaller, data files (templates/, VERSION) are unpacked to
+# a temp dir exposed as sys._MEIPASS; when run from source they sit next to this
+# file. RESOURCE_DIR points at whichever holds the bundled assets.
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    RESOURCE_DIR = Path(sys._MEIPASS)            # bundled assets (templates, VERSION)
+    APP_DIR_PATH = Path(sys.executable).parent.resolve()   # where the exe lives
+else:
+    RESOURCE_DIR = Path(__file__).parent.resolve()
+    APP_DIR_PATH = RESOURCE_DIR
+
+BASE_DIR = RESOURCE_DIR
 sys.path.insert(0, str(BASE_DIR))
 
 app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
@@ -85,8 +95,9 @@ TIMEOUT = 15
 MAX_RESULTS_DEFAULT = 10
 
 # ── Auto-update configuration ──────────────────────────────────────────────
-APP_DIR_PATH    = Path(__file__).parent.resolve()
-VERSION_FILE    = APP_DIR_PATH / "VERSION"
+# APP_DIR_PATH is set above (frozen-aware). VERSION ships as a bundled resource,
+# so read it from RESOURCE_DIR; fall back to the app dir for source checkouts.
+VERSION_FILE    = RESOURCE_DIR / "VERSION"
 # Raw GitHub URL for the VERSION file on the main branch
 GITHUB_RAW_VERSION = "https://raw.githubusercontent.com/H4lBarAd11/MedSearch-by-RN/main/VERSION"
 
@@ -98,15 +109,23 @@ def get_local_version():
 
 def _version_tuple(v):
     """
-    Parse a version string into a comparable tuple.
-    Handles 'Beta 5' (→ (5,)) and dotted 'x.y.z' (→ (x,y,z)).
-    Any embedded number is extracted; missing/garbage → 0.
+    Parse a version string into a comparable tuple, where a real release
+    always sorts ABOVE any beta.
+
+    - 'Beta 6'  → (0, 6)      (betas are pre-1.0 releases)
+    - '1.0'     → (1, 0)
+    - '1.2.3'   → (1, 2, 3)
+
+    This guarantees 1.0 > Beta N for every N, so users on a beta correctly
+    receive the 1.0 update (and never get prompted to 'downgrade' to a beta).
     """
     s = str(v).strip()
-    # Pull all integers out of the string, in order.
     nums = re.findall(r"\d+", s)
     if not nums:
         return (0,)
+    # Anything labelled "beta" is a pre-release: prefix a 0 major component.
+    if re.search(r"beta", s, re.IGNORECASE):
+        return (0,) + tuple(int(n) for n in nums)
     return tuple(int(n) for n in nums)
 
 LOCAL_VERSION = get_local_version()
