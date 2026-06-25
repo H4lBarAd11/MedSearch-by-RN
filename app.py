@@ -7,8 +7,9 @@ Wraps all search logic from medsearch.py and serves a browser-based interface.
 Results and AI text stream live via Server-Sent Events (SSE).
 """
 
-import sys, os, json, re, time, threading, queue, urllib.parse, urllib.request
+import sys, os, json, re, time, threading, urllib.parse, urllib.request
 import urllib.error, xml.etree.ElementTree as ET
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify, stream_with_context
@@ -34,6 +35,9 @@ DEFAULTS = {
     "scopus_insttoken":  "",
     "wos_api_key":       "",
     "unpaywall_email":   "",
+    # User preference: whether AI features are active (independent of key).
+    # Lets users who don't want AI turn it off even with a key present.
+    "ai_enabled":        True,
     # Mirror priority order. sci-hub.se was DNS-blocked in Jan 2026, so the
     # currently-active mirrors come first. We pass the full list to the UI so
     # users can fall through to a backup if a mirror is unreachable.
@@ -57,7 +61,7 @@ def load_config():
             if cfg.get("scihub_mirrors") in _LEGACY_BROKEN_MIRRORS:
                 cfg["scihub_mirrors"] = list(DEFAULTS["scihub_mirrors"])
                 migrated = True
-        except: pass
+        except Exception: pass
     for k, e in {"anthropic_api_key":"ANTHROPIC_API_KEY","pubmed_api_key":"NCBI_API_KEY",
                  "scopus_api_key":"SCOPUS_API_KEY","wos_api_key":"WOS_API_KEY",
                  "unpaywall_email":"UNPAYWALL_EMAIL"}.items():
@@ -68,7 +72,7 @@ def load_config():
         try:
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
-        except: pass
+        except Exception: pass
     return cfg
 
 def save_config(cfg):
@@ -142,13 +146,13 @@ def http_get(url, headers=None, timeout=TIMEOUT):
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", errors="replace"), r.status
     except urllib.error.HTTPError as e: return None, e.code
-    except: return None, 0
+    except Exception: return None, 0
 
 def fetch_json(url, headers=None):
     body, status = http_get(url, headers)
     if body:
         try: return json.loads(body), status
-        except: pass
+        except Exception: pass
     return None, status
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -228,26 +232,6 @@ def ai_oneliner(title, abstract):
         return None
     return None
 
-def add_oneliners_parallel(articles, max_workers=8):
-    """
-    Generate AI one-liners for a batch of articles concurrently and patch them
-    into each dict in-place. Much faster than sequential calls: a source with
-    10 articles finishes in ~1 call's time instead of 10. No-op if AI is off.
-    """
-    if not (CONFIG.get("anthropic_api_key","") or "").strip():
-        return articles
-    targets = [a for a in articles if a.get("abstract") and not a.get("oneliner")]
-    if not targets:
-        return articles
-    def _one(a):
-        a["oneliner"] = ai_oneliner(a.get("title",""), a.get("abstract",""))
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
-            list(ex.map(_one, targets))
-    except Exception:
-        pass   # if the pool fails, articles just have no one-liners
-    return articles
-
 def ai_synthesis_stream(query, articles):
     """Generator that yields SSE chunks for the synthesis."""
     key = (CONFIG.get("anthropic_api_key","") or "").strip()
@@ -282,10 +266,10 @@ def ai_synthesis_stream(query, articles):
                     chunk = json.loads(ps).get("delta",{}).get("text","")
                     if chunk:
                         yield "data: " + json.dumps({"type":"chunk","text":chunk}) + "\n\n"
-                except: continue
+                except Exception: continue
     except urllib.error.HTTPError as e:
         try: detail = e.read().decode()
-        except: detail = ""
+        except Exception: detail = ""
         msg = f"Anthropic API error {e.code}. "
         if e.code == 401:
             msg += "Your API key is invalid or expired. Re-enter it in Settings (check for typos or extra spaces)."
@@ -321,7 +305,7 @@ def ai_explain_stream(article):
                 try:
                     chunk = json.loads(ps).get("delta",{}).get("text","")
                     if chunk: yield "data: "+json.dumps({"type":"chunk","text":chunk})+"\n\n"
-                except: continue
+                except Exception: continue
     except Exception as e:
         yield "data: "+json.dumps({"type":"error","text":str(e)})+"\n\n"
     yield "data: "+json.dumps({"type":"done"})+"\n\n"
@@ -414,7 +398,7 @@ def assistant_chat_stream(messages, query, articles):
                     chunk = json.loads(ps).get("delta",{}).get("text","")
                     if chunk:
                         yield "data: " + json.dumps({"type":"chunk","text":chunk}) + "\n\n"
-                except: continue
+                except Exception: continue
     except urllib.error.HTTPError as e:
         msg = f"Anthropic API error {e.code}. "
         if e.code == 401: msg += "Your API key is invalid or expired."
@@ -483,14 +467,12 @@ def get_mesh(query):
                     root = ET.fromstring(body)
                     for t in root.findall(".//DescriptorName")[:5]:
                         suggestions.append({"type":"mesh","text":t.text})
-                except: pass
+                except Exception: pass
     return suggestions
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  CITATION GRAPH  (OpenCitations COCI API + Crossref title resolution)
 # ══════════════════════════════════════════════════════════════════════════════
-
-import concurrent.futures
 
 def _crossref_meta(doi):
     """Resolve a DOI to {title, year, authors} via Crossref. Returns None on failure."""
@@ -581,7 +563,7 @@ def within_range(year_str, y_from, y_to):
         if y_from and y < y_from: return False
         if y_to   and y > y_to:   return False
         return True
-    except: return True
+    except Exception: return True
 
 def _pubmed_year(art_el):
     """Extract a 4-digit year from PubDate, handling <Year> and <MedlineDate>."""
@@ -787,40 +769,9 @@ def search_clinicaltrials(query, max_r, y_from, y_to, seen):
         time.sleep(0.1)
     return results
 
-def search_biorxiv(query, server, max_r, y_from, y_to, seen):
-    results = []
-    label = "medRxiv" if server=="medrxiv" else "bioRxiv"
-    data, _ = fetch_json(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-                         f"?db=pmc&term={urllib.parse.quote(query)}+AND+{server}[filter]"
-                         f"&retmax={max_r}&retmode=json")
-    if not data: return results
-    ids = data.get("esearchresult",{}).get("idlist",[])
-    if not ids: return results
-    body, _ = http_get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-                       f"?db=pmc&id={','.join(ids)}&retmode=xml")
-    if not body: return results
-    try:
-        root = ET.fromstring(body)
-        for art in root.findall(".//article"):
-            te = art.find(".//article-title")
-            title = "".join(te.itertext()).strip() if te is not None else "No title"
-            ae = art.find(".//abstract")
-            abstract = "".join(ae.itertext()).strip() if ae is not None else ""
-            ye = art.find(".//pub-date/year")
-            year = ye.text if ye is not None else "n.d."
-            if not within_range(year, y_from, y_to): continue
-            de = art.find(".//article-id[@pub-id-type='doi']")
-            doi = de.text if de is not None else None
-            if is_duplicate(seen, doi, title): continue
-            register(seen, doi, title)
-            kind, link = resolve_access(doi)
-            results.append({"title":title,"authors":"See preprint","year":year,
-                            "journal":label,"quartile":None,"doi":doi,"pmid":None,
-                            "abstract":abstract,"source":label,"access_kind":"open",
-                            "access_link":link or f"https://www.{server}.org","scihub":None,
-                            "oneliner":None})
-    except: pass
-    return results
+# NOTE: medRxiv/bioRxiv were removed — their official API has no keyword-search
+# endpoint (only date-range or DOI fetch), and the PMC-based workaround simply
+# duplicated PubMed results via dedup. arXiv stays (it has a real search API).
 
 def search_scopus(query, max_r, y_from, y_to, seen):
     results = []
@@ -1052,7 +1003,7 @@ def zotero_save(articles):
             return True, f"{len(items)} item(s) sent to Zotero."
         body = ""
         try: body = e.read().decode()[:200]
-        except: pass
+        except Exception: pass
         return False, f"Zotero returned error {e.code}. {body}"
     except Exception as e:
         return False, f"Could not reach Zotero: {e}"
@@ -1070,14 +1021,25 @@ SESSION = {"articles": [], "query": "", "history": [], "last_synthesis": ""}
 
 @app.route("/")
 def index():
+    has_key = bool((CONFIG.get("anthropic_api_key","") or "").strip())
+    ai_pref = CONFIG.get("ai_enabled", True)
     return render_template("index.html",
-                           ai_on=bool(CONFIG.get("anthropic_api_key")),
+                           ai_on=(has_key and ai_pref),   # active only if key AND enabled
+                           has_ai_key=has_key,             # whether a key exists at all
                            history=SESSION["history"][-10:],
                            saved=load_saved(),
                            show_onboarding=not CONFIG.get("onboarding_seen", False),
                            app_version=get_local_version(),
                            has_scopus=bool((CONFIG.get("scopus_api_key","") or "").strip()),
                            has_wos=bool((CONFIG.get("wos_api_key","") or "").strip()))
+
+@app.route("/ai/toggle", methods=["POST"])
+def ai_toggle():
+    """Turn AI features on/off (user preference, persisted)."""
+    data = request.json or {}
+    CONFIG["ai_enabled"] = bool(data.get("enabled", True))
+    save_config(CONFIG)
+    return jsonify({"ok": True, "ai_enabled": CONFIG["ai_enabled"]})
 
 @app.route("/onboarding/dismiss", methods=["POST"])
 def onboarding_dismiss():
@@ -1167,56 +1129,6 @@ def update_apply():
     except Exception as e:
         return jsonify({"ok": False, "message": f"Update error: {e}"}), 200
 
-@app.route("/search", methods=["POST"])
-def search():
-    data    = request.json
-    query   = data.get("query","").strip()
-    sources = data.get("sources",[])
-    max_r   = int(data.get("max_results", MAX_RESULTS_DEFAULT))
-    y_from  = int(data["year_from"]) if data.get("year_from") else None
-    y_to    = int(data["year_to"])   if data.get("year_to")   else None
-
-    if not query: return jsonify({"error":"Empty query"}), 400
-
-    SESSION["articles"] = []
-    SESSION["query"]    = query
-    SESSION["last_synthesis"] = ""
-    if query not in SESSION["history"]: SESSION["history"].append(query)
-
-    seen    = make_dedup_set()
-    results = []
-    mesh    = []
-    total_pubmed = 0
-
-    SOURCE_MAP = {
-        "pubmed":         lambda: search_pubmed(query, max_r, y_from, y_to, seen),
-        "cochrane":       lambda: search_cochrane(query, max_r, y_from, y_to, seen),
-        "arxiv":          lambda: search_arxiv(query, max_r, y_from, y_to, seen),
-        "clinicaltrials": lambda: search_clinicaltrials(query, max_r, y_from, y_to, seen),
-        "scopus":         lambda: search_scopus(query, max_r, y_from, y_to, seen),
-        "wos":            lambda: search_wos(query, max_r, y_from, y_to, seen),
-    }
-
-    if "pubmed" in sources or "all" in sources:
-        mesh = get_mesh(query)
-        res, total_pubmed = search_pubmed(query, max_r, y_from, y_to, seen)
-        results.extend(res)
-
-    for src, fn in SOURCE_MAP.items():
-        if src == "pubmed": continue
-        if src in sources or "all" in sources:
-            r = fn()
-            if isinstance(r, tuple): r = r[0]
-            results.extend(r)
-
-    SESSION["articles"] = results
-    return jsonify({
-        "articles": results,
-        "mesh": mesh,
-        "total_pubmed": total_pubmed,
-        "count": len(results),
-    })
-
 @app.route("/search_stream", methods=["POST"])
 def search_stream():
     """Streaming search — emits results per source via SSE as they complete."""
@@ -1266,7 +1178,7 @@ def search_stream():
     def generate():
         seen = make_dedup_set()
         all_results = []
-        ai_on = bool((CONFIG.get("anthropic_api_key","") or "").strip())
+        ai_on = bool((CONFIG.get("anthropic_api_key","") or "").strip()) and CONFIG.get("ai_enabled", True)
 
         # Send an initial padding comment to defeat buffering in some webviews.
         yield ":" + (" " * 2048) + "\n\n"
@@ -1377,7 +1289,7 @@ def synthesis():
         for chunk in ai_synthesis_stream(query, articles):
             if '"type":"chunk"' in chunk:
                 try: text += json.loads(chunk[6:])["text"]
-                except: pass
+                except Exception: pass
             yield chunk
         SESSION["last_synthesis"] = text
     return Response(stream_with_context(generate()), mimetype="text/event-stream",
@@ -1442,13 +1354,91 @@ def assistant_chat_route():
                     mimetype="text/event-stream",
                     headers={"Cache-Control":"no-cache","X-Accel-Buffering":"no"})
 
+def _is_scihub_url(url):
+    """True if the URL points at a known Sci-Hub mirror."""
+    mirrors = CONFIG.get("scihub_mirrors") or DEFAULTS["scihub_mirrors"]
+    hosts = []
+    for m in mirrors:
+        try: hosts.append(urllib.parse.urlparse(m).hostname or "")
+        except Exception: pass
+    try:
+        h = urllib.parse.urlparse(url).hostname or ""
+    except Exception:
+        return False
+    return any(h == host or h.endswith("." + host) for host in hosts if host)
+
+def _extract_scihub_pdf_url(html_text, page_url):
+    """
+    Sci-Hub returns an HTML page with the actual PDF embedded in an <iframe>,
+    <embed>, or a download button. Parse out that real PDF URL and return it
+    absolute, or None if not found.
+    """
+    candidates = []
+    # Common Sci-Hub patterns: <iframe src="..."> / <embed src="..."> /
+    # onclick="location.href='...'" download button.
+    for pat in [
+        r'<iframe[^>]+src\s*=\s*["\']([^"\']+)["\']',
+        r'<embed[^>]+src\s*=\s*["\']([^"\']+)["\']',
+        r'location\.href\s*=\s*["\']([^"\']+\.pdf[^"\']*)["\']',
+        r'href\s*=\s*["\']([^"\']+\.pdf[^"\']*)["\']',
+    ]:
+        candidates += re.findall(pat, html_text, flags=re.IGNORECASE)
+
+    for c in candidates:
+        c = c.strip()
+        if not c:
+            continue
+        # Strip any #fragment (Sci-Hub adds #view=FitH etc.)
+        c = c.split("#")[0]
+        if not c:
+            continue
+        # Resolve protocol-relative (//host/path) and relative URLs
+        if c.startswith("//"):
+            scheme = urllib.parse.urlparse(page_url).scheme or "https"
+            c = f"{scheme}:{c}"
+        elif c.startswith("/"):
+            base = urllib.parse.urlparse(page_url)
+            c = f"{base.scheme}://{base.netloc}{c}"
+        elif not c.startswith(("http://", "https://")):
+            c = urllib.parse.urljoin(page_url, c)
+        # Looks like a PDF? (Sci-Hub iframes usually end .pdf or contain /pdf/)
+        low = c.lower()
+        if ".pdf" in low or "/pdf" in low or "downloads" in low:
+            return c
+    # Fallback: if exactly one iframe/embed was found, use it even without .pdf
+    if candidates:
+        c = candidates[0].split("#")[0].strip()
+        if c.startswith("//"):
+            scheme = urllib.parse.urlparse(page_url).scheme or "https"
+            c = f"{scheme}:{c}"
+        elif c.startswith("/"):
+            base = urllib.parse.urlparse(page_url)
+            c = f"{base.scheme}://{base.netloc}{c}"
+        elif not c.startswith(("http://", "https://")):
+            c = urllib.parse.urljoin(page_url, c)
+        return c or None
+    return None
+
+def _fetch_url_bytes(url, timeout=30):
+    """Fetch a URL with a browser-like UA. Returns (data_bytes, content_type)."""
+    req = urllib.request.Request(url, headers={
+        "User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) "
+                     "AppleWebKit/537.36 (KHTML, like Gecko) "
+                     "Chrome/120.0 Safari/537.36",
+        "Accept":"application/pdf,text/html,*/*",
+    })
+    upstream = urllib.request.urlopen(req, timeout=timeout)
+    return upstream.read(), upstream.headers.get("Content-Type","").lower()
+
 @app.route("/pdf_proxy")
 def pdf_proxy():
     """
-    Fetch an open-access PDF server-side and stream it to the client.
-    This bypasses X-Frame-Options / CORS restrictions that block embedding
-    external PDFs directly in an iframe. Only used for OA links the app already
-    surfaced (we don't accept arbitrary user URLs from anywhere else).
+    Fetch a PDF server-side and stream it to the client. Bypasses
+    X-Frame-Options / CORS that block embedding external PDFs in an iframe.
+    Only proxies links the app already surfaced (not an open relay).
+
+    For Sci-Hub URLs, which return an HTML viewer page rather than a direct
+    PDF, we parse out the embedded PDF URL and fetch that instead.
     """
     url = request.args.get("url","").strip()
     if not url or not url.lower().startswith(("http://","https://")):
@@ -1464,18 +1454,24 @@ def pdf_proxy():
         return jsonify({"error":"URL not recognized from current results"}), 403
 
     try:
-        req = urllib.request.Request(url, headers={
-            "User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                         "Chrome/120.0 Safari/537.36",
-            "Accept":"application/pdf,*/*",
-        })
-        upstream = urllib.request.urlopen(req, timeout=30)
-        ctype = upstream.headers.get("Content-Type","").lower()
-        data = upstream.read()
-
-        # If we got HTML instead of a PDF (paywall/landing page), say so.
+        data, ctype = _fetch_url_bytes(url)
         is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+
+        # Sci-Hub returns an HTML viewer page — dig out the embedded PDF.
+        if not is_pdf and _is_scihub_url(url):
+            try:
+                html_text = data.decode("utf-8", errors="replace")
+            except Exception:
+                html_text = ""
+            pdf_url = _extract_scihub_pdf_url(html_text, url)
+            if not pdf_url:
+                return jsonify({"error":"scihub_no_pdf",
+                                "message":"Sci-Hub didn't return a readable PDF for this article "
+                                          "(it may not be in their collection). Try a mirror in your browser."}), 415
+            data, ctype = _fetch_url_bytes(pdf_url)
+            is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+
+        # Still not a PDF (paywall/landing page).
         if not is_pdf:
             return jsonify({"error":"not_pdf",
                             "message":"This link returned a web page, not a direct PDF. "
@@ -1567,7 +1563,7 @@ SAVED_FILE = CONFIG_DIR / "saved_searches.json"
 def load_saved():
     if SAVED_FILE.exists():
         try: return json.loads(SAVED_FILE.read_text())
-        except: return []
+        except Exception: return []
     return []
 
 def write_saved(items):

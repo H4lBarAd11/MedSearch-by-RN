@@ -30,6 +30,17 @@
     --red:         #b5503a;   /* warm terracotta — errors */
     --purple:      #8a6db0;   /* muted plum — AI accents */
 
+    /* ── Soft tint backgrounds (pale fills behind colored text/pills) ── */
+    --accent-tint:  #efe7dc;  /* pale caramel */
+    --accent-tint2: #e3d5c2;  /* deeper caramel hover */
+    --green-tint:   #e6efdf;  /* pale sage */
+    --green-tint2:  #d6e6cb;  /* deeper sage hover */
+    --yellow-tint:  #f6ecd9;  /* pale ochre */
+    --yellow-tint2: #ecdcbb;  /* deeper ochre hover */
+    --red-tint:     #f3ddd7;  /* pale terracotta */
+    --purple-tint:  #ece6f3;  /* pale plum */
+    --purple-tint2: #ddd0ec;  /* deeper plum hover */
+
     --font:        Verdana, Geneva, 'DejaVu Sans', Tahoma, sans-serif;
     --mono:        'Courier New', Courier, monospace;
     --radius:      8px;
@@ -75,7 +86,7 @@
   .logo:hover { background: var(--bg3); }
   .logo:active { background: var(--accent-tint); }
   .logo-title {
-    font-size: 1.5rem;
+    font-size: 1.75rem;
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--text);
@@ -523,9 +534,15 @@
     font-size: 0.68rem;
     font-weight: 600;
     letter-spacing: 0.04em;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: var(--font);
+    transition: all var(--transition);
   }
   .ai-badge.on  { background: var(--purple-tint); color: var(--purple); }
   .ai-badge.off { background: var(--bg3); color: var(--text3); }
+  .ai-badge.on:hover  { border-color: var(--purple); }
+  .ai-badge.off:hover { border-color: var(--text3); }
 
   /* ── Results area ────────────────────────────────────────────────────── */
   .results-area {
@@ -817,6 +834,11 @@
   }
   .scihub-alt-item {
     display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
     padding: 6px 9px;
     font-size: 0.78rem;
     color: var(--text2);
@@ -1554,6 +1576,12 @@
     line-height: 1.5;
   }
   .onboard-note strong { color: var(--green); }
+  .onboard-note.onboard-note-warn {
+    background: var(--yellow-tint);
+    border-left-color: var(--yellow);
+    margin-top: 10px;
+  }
+  .onboard-note.onboard-note-warn strong { color: var(--yellow); }
   .onboard-footer {
     display: flex;
     align-items: center;
@@ -1970,7 +1998,7 @@
       <div class="search-row">
         <div class="search-input-wrap">
           <input class="search-input" type="text" id="searchInput"
-                 placeholder="e.g. glioblastoma temozolomide blood-brain barrier…"
+                 placeholder="e.g. cognitive mapping awake surgery…"
                  onkeydown="if(event.key==='Enter') runSearch()">
           <span class="search-icon">⌕</span>
         </div>
@@ -2002,9 +2030,12 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     <div class="status-bar">
       <div class="status-dot" id="statusDot"></div>
       <span id="statusText">Ready — select databases and enter a query</span>
-      <span class="ai-badge {{ 'on' if ai_on else 'off' }}">
+      <button class="ai-badge {{ 'on' if ai_on else 'off' }}" id="aiBadge"
+              onclick="toggleAI()"
+              data-has-key="{{ 'true' if has_ai_key else 'false' }}"
+              title="Turn AI features on or off">
         {{ '✦ AI on' if ai_on else '○ AI off' }}
-      </span>
+      </button>
     </div>
 
     <!-- Results -->
@@ -2297,6 +2328,7 @@ const ONBOARD_CONTENT = {
       },
     ],
     note: '<strong>Optional keys:</strong> Scopus, Web of Science and a PubMed key add more sources and higher limits — but everything works without them.',
+    note2: '<strong>Scopus &amp; Web of Science:</strong> these only work from your <strong>institution\'s network</strong>. From home, connect to your university VPN, or ask your library for an Elsevier "institutional token" and add it in Settings. If you see a 401 error, you\'re off-network.',
   },
   it: {
     welcome: 'Benvenuto su <span class="accent">MedSearch</span>',
@@ -2330,6 +2362,7 @@ const ONBOARD_CONTENT = {
       },
     ],
     note: '<strong>Chiavi opzionali:</strong> Scopus, Web of Science e una chiave PubMed aggiungono più fonti e limiti più alti — ma tutto funziona anche senza.',
+    note2: '<strong>Scopus e Web of Science:</strong> funzionano solo dalla <strong>rete della tua istituzione</strong>. Da casa, connettiti alla VPN dell\'università, oppure chiedi alla biblioteca un "institutional token" Elsevier e inseriscilo nelle Impostazioni. Se vedi un errore 401, sei fuori dalla rete.',
   },
 };
 
@@ -2349,6 +2382,7 @@ function renderOnboardBody() {
     html += `</div>`;
   });
   html += `<div class="onboard-note">${t.note}</div>`;
+  if (t.note2) html += `<div class="onboard-note onboard-note-warn">${t.note2}</div>`;
   document.getElementById('onboardBody').innerHTML = html;
   document.getElementById('onboardCloseBtn').textContent = t.closeBtn;
   document.getElementById('onboardDismissLabel').textContent = t.dismiss;
@@ -2468,6 +2502,9 @@ window.addEventListener('load', () => {
     setTimeout(checkForUpdate, delay);
   }
 });
+
+// Apply the initial AI on/off state to the UI (hides assistant bubble if off)
+window.addEventListener('load', () => { applyAIState(); });
 
 let synthesisOpen  = false;
 let searchRunning  = false;
@@ -2735,7 +2772,7 @@ function scaffoldResults() {
         <span id="searchProgress" class="search-progress"></span>
       </div>
       <div class="action-row">
-        <button class="action-btn primary" onclick="openSynthesis()">✦ AI Synthesis</button>
+        <button class="action-btn primary ai-synthesis-btn" onclick="openSynthesis()" style="${aiEnabled ? '' : 'display:none'}">✦ AI Synthesis</button>
         <button class="action-btn" onclick="saveCurrentSearch()">★ Save</button>
         <button class="action-btn" onclick="openExport()">↓ Export</button>
       </div>
@@ -2946,28 +2983,29 @@ function makeCard(a) {
   if (a.access_kind === 'open' && a.access_link)
     links += `<button class="link-btn open-access" onclick="openPdf('${escAttr(a.access_link)}', '${escAttr(a.title || 'PDF')}')">⬤ Read PDF</button>`;
   if (a.access_kind === 'doi' && a.access_link)
-    links += `<a class="link-btn doi" href="${a.access_link}" target="_blank">⬤ DOI</a>`;
+    links += `<a class="link-btn doi" href="${escHtml(a.access_link)}" target="_blank">⬤ DOI</a>`;
   if (a.scihub && a.scihub.length) {
     // Normalize: support old single-string format too (defensive)
     const mirrors = Array.isArray(a.scihub) ? a.scihub : [a.scihub];
     const primary = mirrors[0];
     const alts = mirrors.slice(1);
+    const titleAttr = escAttr(a.title || 'PDF');
     if (alts.length) {
       const altsHtml = alts.map(u => {
         // pretty label: just the hostname
         let host = u;
         try { host = new URL(u).hostname; } catch(_) {}
-        return `<a class="scihub-alt-item" href="${u}" target="_blank">${escHtml(host)}</a>`;
+        return `<button class="scihub-alt-item" onclick="openPdf('${escAttr(u)}', '${titleAttr}')">${escHtml(host)}</button>`;
       }).join('');
       links += `<span class="scihub-group">
-        <a class="link-btn scihub" href="${primary}" target="_blank">Sci-Hub</a><button class="scihub-alt-toggle" onclick="toggleScihubAlts(event, ${a._idx})" title="Other mirrors">▾</button>
+        <button class="link-btn scihub" onclick="openPdf('${escAttr(primary)}', '${titleAttr}')">Sci-Hub</button><button class="scihub-alt-toggle" onclick="toggleScihubAlts(event, ${a._idx})" title="Other mirrors">▾</button>
         <span class="scihub-alts" id="scihub_alts_${a._idx}">
           <div class="scihub-alts-label">If this doesn't work, try:</div>
           ${altsHtml}
         </span>
       </span>`;
     } else {
-      links += `<a class="link-btn scihub" href="${primary}" target="_blank">Sci-Hub</a>`;
+      links += `<button class="link-btn scihub" onclick="openPdf('${escAttr(primary)}', '${titleAttr}')">Sci-Hub</button>`;
     }
   }
   if (a.pmid)
@@ -2983,7 +3021,7 @@ function makeCard(a) {
 
   const abstract = a.abstract || '';
   const oneliner = a.oneliner
-    ? `<div class="ai-oneliner">✦ ${a.oneliner}</div>` : '';
+    ? `<div class="ai-oneliner">✦ ${escHtml(a.oneliner)}</div>` : '';
 
   card.innerHTML = `
     <div class="article-title">${escHtml(a.title)}</div>
@@ -3051,8 +3089,48 @@ function closeSynthesis() {
   synthesisOpen = false;
 }
 
-// ── AI Assistant (floating chat) ────────────────────────────────────────────
-let assistantOpen = false;
+// ── AI on/off toggle ────────────────────────────────────────────────────────
+let aiEnabled = {{ 'true' if ai_on else 'false' }};
+const aiHasKey = {{ 'true' if has_ai_key else 'false' }};
+
+function toggleAI() {
+  // If there's no API key at all, turning "on" makes no sense — guide them.
+  if (!aiHasKey && !aiEnabled) {
+    showToast('Add your Anthropic API key in Settings to use AI features.', 'red');
+    openSettings();
+    return;
+  }
+  aiEnabled = !aiEnabled;
+  applyAIState();
+  // Persist the preference
+  fetch('/ai/toggle', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({enabled: aiEnabled})
+  }).catch(() => {});
+  showToast(aiEnabled ? 'AI features enabled.' : 'AI features turned off.', aiEnabled ? 'green' : null);
+}
+
+// Reflect the current AI state across the badge and all AI UI elements
+function applyAIState() {
+  const badge = document.getElementById('aiBadge');
+  if (badge) {
+    badge.textContent = aiEnabled ? '✦ AI on' : '○ AI off';
+    badge.classList.toggle('on', aiEnabled);
+    badge.classList.toggle('off', !aiEnabled);
+  }
+  // Floating assistant bubble: hide entirely when AI is off
+  const bubble = document.getElementById('assistantBubble');
+  if (bubble) bubble.style.display = aiEnabled ? '' : 'none';
+  // If the assistant panel is open and AI gets turned off, close it
+  if (!aiEnabled && assistantOpen) toggleAssistant();
+  // AI Synthesis button in the results header (may not exist yet)
+  document.querySelectorAll('.ai-synthesis-btn').forEach(b => {
+    b.style.display = aiEnabled ? '' : 'none';
+  });
+}
+
+
 let assistantHistory = [];      // [{role, content}, ...]
 let assistantStreaming = false;
 let assistantSuggestionsLoaded = false;
@@ -3310,7 +3388,10 @@ function openPdf(url, title) {
   container.innerHTML = '';
   zoomCtl.style.display = 'none';
   loading.style.display = 'flex';
-  document.getElementById('pdfLoadingText').textContent = 'Loading PDF…';
+  // Sci-Hub takes two hops (page → embedded PDF), so signal it may be slower
+  const isScihub = /sci-hub/i.test(url);
+  document.getElementById('pdfLoadingText').textContent =
+    isScihub ? 'Fetching from Sci-Hub…' : 'Loading PDF…';
   const oldErr = document.getElementById('pdfErrorPanel');
   if (oldErr) oldErr.remove();
 
@@ -3445,7 +3526,7 @@ function showPdfError(message, url) {
   err.innerHTML = `
     <div class="pdf-error-icon">📄</div>
     <div>${escHtml(message)}</div>
-    <a href="${escAttr(url)}" target="_blank">↗ Open in browser instead</a>`;
+    <a href="${escHtml(url)}" target="_blank">↗ Open in browser instead</a>`;
   body.appendChild(err);
 }
 
@@ -3899,7 +3980,14 @@ function escHtml(s) {
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function escAttr(s) {
-  return String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+  // Used inside single-quoted JS string literals in onclick="..." handlers.
+  // Escape backslashes first, then quotes and newlines, to avoid breakout.
+  return String(s)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, '');
 }
 
 // ── Keyboard shortcut ──────────────────────────────────────────────────────
