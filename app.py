@@ -1479,26 +1479,36 @@ def _extract_scihub_pdf_url(html_text, page_url):
     return None
 
 
-def _fetch_url_bytes(url, timeout=30, _redirects=0):
+_BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+              "application/pdf,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+def _fetch_url_bytes(url, timeout=30, referer=None):
     """
-    Fetch a URL with browser-like headers and return (data_bytes, content_type).
-    Handles gzip/deflate decompression and follows redirects (incl. cross-scheme
-    and meta/JS-less Location headers), which the naive urlopen path missed.
+    Fetch a URL with browser-like headers; return (data_bytes, content_type).
+    Handles gzip/deflate and follows redirects (urllib does this, but we add a
+    Referer of the page's own origin which some publishers require).
+    Raises urllib.error.HTTPError on 4xx/5xx so callers can react (e.g. 403).
     """
     import gzip, zlib
-    req = urllib.request.Request(url, headers={
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/pdf,text/html,application/xhtml+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate",
-        "Referer": f"{urllib.parse.urlparse(url).scheme}://{urllib.parse.urlparse(url).netloc}/",
-    })
+    headers = dict(_BROWSER_HEADERS)
+    # A same-origin Referer placates some publishers' hotlink protection.
+    parsed = urllib.parse.urlparse(url)
+    headers["Referer"] = referer or f"{parsed.scheme}://{parsed.netloc}/"
+    req = urllib.request.Request(url, headers=headers)
     upstream = urllib.request.urlopen(req, timeout=timeout)
     raw = upstream.read()
     enc = (upstream.headers.get("Content-Encoding", "") or "").lower()
-    # Decompress if the server compressed the body
     try:
         if "gzip" in enc:
             raw = gzip.decompress(raw)
@@ -1506,9 +1516,40 @@ def _fetch_url_bytes(url, timeout=30, _redirects=0):
             try: raw = zlib.decompress(raw)
             except Exception: raw = zlib.decompress(raw, -zlib.MAX_WBITS)
     except Exception:
-        pass   # if decompression fails, fall back to raw bytes
+        pass
     ctype = upstream.headers.get("Content-Type", "").lower()
     return raw, ctype
+
+def _scihub_urls_for(url):
+    """
+    Given a primary access URL that's failing, find the Sci-Hub mirror URLs for
+    the SAME article (matched via the session by access_link), so we can fall
+    through to Sci-Hub automatically. Returns a list (possibly empty).
+    """
+    for a in SESSION.get("articles", []):
+        if a.get("access_link") == url:
+            return list(a.get("scihub") or [])
+    return []
+
+def _try_scihub_chain(mirrors):
+    """
+    Try each Sci-Hub mirror in turn: fetch the page, extract the embedded PDF,
+    fetch that, and return (pdf_bytes, ctype) on the first success, else None.
+    """
+    for m in mirrors:
+        try:
+            data, ctype = _fetch_url_bytes(m)
+            if ("pdf" in ctype) or data[:5] == b"%PDF-":
+                return data, ctype
+            html_text = data.decode("utf-8", errors="replace")
+            pdf_url = _extract_scihub_pdf_url(html_text, m)
+            if pdf_url:
+                pdata, pctype = _fetch_url_bytes(pdf_url, referer=m)
+                if ("pdf" in pctype) or pdata[:5] == b"%PDF-":
+                    return pdata, pctype
+        except Exception:
+            continue   # try the next mirror
+    return None
 
 @app.route("/pdf_proxy")
 def pdf_proxy():
@@ -1534,52 +1575,75 @@ def pdf_proxy():
         return jsonify({"error":"URL not recognized from current results"}), 403
 
     try:
-        data, ctype = _fetch_url_bytes(url)
-        is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
-
-        # Sci-Hub returns an HTML viewer page — dig out the embedded PDF.
-        if not is_pdf and _is_scihub_url(url):
-            try:
-                html_text = data.decode("utf-8", errors="replace")
-            except Exception:
-                html_text = ""
-            pdf_url = _extract_scihub_pdf_url(html_text, url)
-            if not pdf_url:
-                return jsonify({"error":"scihub_no_pdf",
-                                "message":"Sci-Hub didn't return a readable PDF for this article "
-                                          "(it may not be in their collection). Try a mirror in your browser."}), 415
-            data, ctype = _fetch_url_bytes(pdf_url)
+        # ── Attempt 1: the requested URL directly ──────────────────────────
+        primary_error = None
+        data = ctype = None
+        is_pdf = False
+        try:
+            data, ctype = _fetch_url_bytes(url)
             is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+        except urllib.error.HTTPError as e:
+            primary_error = e.code            # e.g. 403 from a publisher
+        except Exception:
+            primary_error = "fetch"
 
-        # Non-Sci-Hub HTML: likely an open-access *landing page* rather than a
-        # direct PDF. Try to find the real PDF link advertised on the page
-        # (citation_pdf_url meta tag, embedded viewer, or a .pdf link).
-        elif not is_pdf and "html" in ctype:
-            try:
-                html_text = data.decode("utf-8", errors="replace")
-            except Exception:
-                html_text = ""
-            pdf_url = _extract_pdf_url_from_landing(html_text, url)
-            if pdf_url and pdf_url != url:
+        # ── If it's a Sci-Hub URL serving HTML, extract the embedded PDF ────
+        if data is not None and not is_pdf and _is_scihub_url(url):
+            html_text = data.decode("utf-8", errors="replace")
+            pdf_url = _extract_scihub_pdf_url(html_text, url)
+            if pdf_url:
                 try:
-                    data, ctype = _fetch_url_bytes(pdf_url)
+                    data, ctype = _fetch_url_bytes(pdf_url, referer=url)
                     is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
                 except Exception:
                     pass
 
-        # Still not a PDF (paywall/landing page with no discoverable PDF).
-        if not is_pdf:
-            return jsonify({"error":"not_pdf",
-                            "message":"This link opens a web page rather than a direct PDF. "
-                                      "Opening it in your browser should work."}), 415
+        # ── If it's a publisher landing page (HTML), look for the real PDF ──
+        elif data is not None and not is_pdf and "html" in (ctype or ""):
+            html_text = data.decode("utf-8", errors="replace")
+            pdf_url = _extract_pdf_url_from_landing(html_text, url)
+            if pdf_url and pdf_url != url:
+                try:
+                    data, ctype = _fetch_url_bytes(pdf_url, referer=url)
+                    is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+                except Exception:
+                    pass
 
-        resp = Response(data, mimetype="application/pdf")
-        resp.headers["Content-Disposition"] = "inline; filename=article.pdf"
-        resp.headers["Cache-Control"] = "private, max-age=600"
-        return resp
-    except urllib.error.HTTPError as e:
-        return jsonify({"error":"fetch_failed",
-                        "message":f"Couldn't fetch the PDF (HTTP {e.code})."}), 502
+        # ── Fallthrough: primary route failed (403/paywall/no-PDF). If this
+        #    article has Sci-Hub mirrors, try them automatically before giving
+        #    up — Sci-Hub serves the PDF directly and isn't IP/paywall-gated. ─
+        if not is_pdf and not _is_scihub_url(url):
+            mirrors = _scihub_urls_for(url)
+            if mirrors:
+                got = _try_scihub_chain(mirrors)
+                if got:
+                    data, ctype = got
+                    is_pdf = True
+
+        # ── Success ────────────────────────────────────────────────────────
+        if is_pdf and data:
+            resp = Response(data, mimetype="application/pdf")
+            resp.headers["Content-Disposition"] = "inline; filename=article.pdf"
+            resp.headers["Cache-Control"] = "private, max-age=600"
+            return resp
+
+        # ── Honest, specific failure messages ──────────────────────────────
+        if _is_scihub_url(url):
+            return jsonify({"error":"scihub_no_pdf",
+                            "message":"Sci-Hub doesn't have a readable PDF for this article "
+                                      "(it may not be in their collection)."}), 415
+        if primary_error == 403:
+            return jsonify({"error":"forbidden",
+                            "message":"The publisher blocked the download (403). This is common for "
+                                      "paywalled journals. Try the Sci-Hub button, or open it in your browser "
+                                      "where your institutional login applies."}), 415
+        if primary_error:
+            return jsonify({"error":"fetch_failed",
+                            "message":"Couldn't reach this PDF directly. Try the Sci-Hub button, or open "
+                                      "it in your browser."}), 502
+        return jsonify({"error":"not_pdf",
+                        "message":"This link opens a web page rather than a direct PDF. Try the Sci-Hub "
+                                  "button, or open it in your browser."}), 415
     except Exception as e:
         return jsonify({"error":"fetch_failed",
                         "message":f"Couldn't fetch the PDF: {e}"}), 502
