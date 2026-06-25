@@ -143,6 +143,52 @@
     color: var(--text3);
   }
   .db-badge.free { background: var(--green-tint); color: var(--green); }
+  .db-badge.available { background: var(--green-tint); color: var(--green); }
+  .db-badge.needs-key { background: var(--yellow-tint); color: var(--yellow); }
+
+  /* API key prompt modal */
+  .apikey-prompt-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 440px;
+    padding: 28px 26px 22px;
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
+    text-align: center;
+  }
+  .apikey-prompt-icon { font-size: 2.2rem; margin-bottom: 8px; }
+  .apikey-prompt-title {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .apikey-prompt-body {
+    font-size: 0.84rem;
+    color: var(--text2);
+    line-height: 1.6;
+    margin-bottom: 22px;
+    text-align: left;
+  }
+  .apikey-prompt-body ol {
+    margin: 10px 0 0;
+    padding-left: 20px;
+  }
+  .apikey-prompt-body li { margin-bottom: 5px; }
+  .apikey-prompt-body a { color: var(--accent); }
+  .apikey-prompt-body code {
+    background: var(--bg3);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+  }
+  .apikey-prompt-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+  }
 
   .select-all-btn {
     margin: 6px 12px 0;
@@ -1829,27 +1875,27 @@
         <span class="db-name">PubMed / MEDLINE</span>
         <span class="db-badge free">Free</span>
       </div>
-      <div class="db-item checked" data-db="clinicaltrials">
+      <div class="db-item" data-db="clinicaltrials">
         <div class="db-check"></div>
         <span class="db-name">ClinicalTrials.gov</span>
         <span class="db-badge free">Free</span>
       </div>
-      <div class="db-item checked" data-db="arxiv">
+      <div class="db-item" data-db="arxiv">
         <div class="db-check"></div>
         <span class="db-name">arXiv</span>
         <span class="db-badge free">Free</span>
       </div>
-      <div class="db-item" data-db="scopus">
+      <div class="db-item" data-db="scopus" data-needs-key="scopus">
         <div class="db-check"></div>
         <span class="db-name">Scopus</span>
-        <span class="db-badge">API key</span>
+        <span class="db-badge {{ 'available' if has_scopus else 'needs-key' }}" id="badge_scopus">{{ 'Available' if has_scopus else 'API required' }}</span>
       </div>
-      <div class="db-item" data-db="wos">
+      <div class="db-item" data-db="wos" data-needs-key="wos">
         <div class="db-check"></div>
         <span class="db-name">Web of Science</span>
-        <span class="db-badge">API key</span>
+        <span class="db-badge {{ 'available' if has_wos else 'needs-key' }}" id="badge_wos">{{ 'Available' if has_wos else 'API required' }}</span>
       </div>
-      <div class="db-item checked" data-db="cochrane">
+      <div class="db-item" data-db="cochrane">
         <div class="db-check"></div>
         <span class="db-name">Cochrane Reviews</span>
         <span class="db-badge free">Free</span>
@@ -2193,6 +2239,19 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
   </div>
 </div>
 
+<!-- ── API key prompt (gentle) ─────────────────────────────────────── -->
+<div class="modal-overlay" id="apiKeyPromptOverlay" onclick="if(event.target===this)closeApiKeyPrompt()">
+  <div class="apikey-prompt-modal">
+    <div class="apikey-prompt-icon">🔑</div>
+    <div class="apikey-prompt-title" id="apiKeyPromptTitle">API key needed</div>
+    <div class="apikey-prompt-body" id="apiKeyPromptBody"></div>
+    <div class="apikey-prompt-actions">
+      <button class="btn-secondary" onclick="closeApiKeyPrompt()">Maybe later</button>
+      <button class="btn-primary" onclick="goToSettingsFromPrompt()">Open Settings</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast ─────────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
@@ -2411,8 +2470,21 @@ let searchRunning  = false;
 let lastSearchParams = null;   // for saving searches
 
 // ── DB checkboxes ─────────────────────────────────────────────────────────
+// Which premium DBs currently have a key (set at render, updated on save)
+let dbKeyPresent = {
+  scopus: {{ 'true' if has_scopus else 'false' }},
+  wos:    {{ 'true' if has_wos else 'false' }},
+};
+
 document.querySelectorAll('.db-item').forEach(item => {
   item.addEventListener('click', () => {
+    const needsKey = item.dataset.needsKey;   // 'scopus' | 'wos' | undefined
+    const turningOn = !item.classList.contains('checked');
+    // If enabling a premium DB with no key, prompt gently instead of checking
+    if (turningOn && needsKey && !dbKeyPresent[needsKey]) {
+      showApiKeyPrompt(needsKey);
+      return;   // don't check it
+    }
     item.classList.toggle('checked');
   });
 });
@@ -2420,12 +2492,79 @@ document.querySelectorAll('.db-item').forEach(item => {
 document.getElementById('selectAllBtn').addEventListener('click', () => {
   const items = document.querySelectorAll('.db-item');
   const allOn = [...items].every(i => i.classList.contains('checked'));
-  items.forEach(i => i.classList.toggle('checked', !allOn));
+  items.forEach(i => {
+    // Don't auto-enable keyless premium DBs via "Select all"
+    if (!allOn && i.dataset.needsKey && !dbKeyPresent[i.dataset.needsKey]) return;
+    i.classList.toggle('checked', !allOn);
+  });
   document.getElementById('selectAllBtn').textContent = allOn ? 'Select all' : 'Deselect all';
 });
 
 function getSelectedDBs() {
   return [...document.querySelectorAll('.db-item.checked')].map(i => i.dataset.db);
+}
+
+// ── API key prompt for premium databases ────────────────────────────────────
+const DB_KEY_INFO = {
+  scopus: {
+    name: 'Scopus',
+    intro: 'Scopus is a premium database from Elsevier. To search it, you need a free API key:',
+    steps: [
+      'Go to <a href="https://dev.elsevier.com" target="_blank">dev.elsevier.com</a> and sign in (institutional access often required).',
+      'Create an API key under "My API Keys".',
+      'Paste it into <strong>⚙ Settings &amp; API keys</strong> → Scopus, and Save.',
+    ],
+  },
+  wos: {
+    name: 'Web of Science',
+    intro: 'Web of Science is a premium database from Clarivate. To search it, you need an API key:',
+    steps: [
+      'Go to <a href="https://developer.clarivate.com" target="_blank">developer.clarivate.com</a> and request access to the WoS Starter API.',
+      'Once approved, copy your API key.',
+      'Paste it into <strong>⚙ Settings &amp; API keys</strong> → Web of Science, and Save.',
+    ],
+  },
+};
+
+function showApiKeyPrompt(dbKey) {
+  const info = DB_KEY_INFO[dbKey];
+  if (!info) return;
+  document.getElementById('apiKeyPromptTitle').textContent = `${info.name} needs an API key`;
+  document.getElementById('apiKeyPromptBody').innerHTML =
+    `<div>${info.intro}</div><ol>${info.steps.map(s => `<li>${s}</li>`).join('')}</ol>`;
+  document.getElementById('apiKeyPromptOverlay').classList.add('open');
+}
+
+function closeApiKeyPrompt() {
+  document.getElementById('apiKeyPromptOverlay').classList.remove('open');
+}
+
+function goToSettingsFromPrompt() {
+  closeApiKeyPrompt();
+  openSettings();
+}
+
+// Refresh the Scopus/WoS badges + internal state after settings are saved
+function refreshDbKeyBadges(scopusPresent, wosPresent) {
+  dbKeyPresent.scopus = !!scopusPresent;
+  dbKeyPresent.wos = !!wosPresent;
+  const map = {scopus: 'badge_scopus', wos: 'badge_wos'};
+  for (const [k, id] of Object.entries(map)) {
+    const badge = document.getElementById(id);
+    if (!badge) continue;
+    if (dbKeyPresent[k]) {
+      badge.textContent = 'Available';
+      badge.classList.remove('needs-key');
+      badge.classList.add('available');
+    } else {
+      badge.textContent = 'API required';
+      badge.classList.remove('available');
+      badge.classList.add('needs-key');
+      // if it was checked but key removed, uncheck it
+      const item = document.querySelector(`.db-item[data-db="${k}"]`);
+      if (item) item.classList.remove('checked');
+    }
+  }
 }
 
 // Live query-mode hint (mirrors backend is_power_query)
@@ -3566,6 +3705,11 @@ async function saveSettings() {
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
   });
+  // Refresh the Scopus/WoS badges to reflect any newly-added (or removed) keys
+  try {
+    const s = await (await fetch('/settings')).json();
+    refreshDbKeyBadges(!!(s.scopus_api_key), !!(s.wos_api_key));
+  } catch(e) {}
   closeSettings();
   showToast('Settings saved — restart the app to apply API key changes.', 'green');
 }

@@ -1041,7 +1041,9 @@ def index():
                            history=SESSION["history"][-10:],
                            saved=load_saved(),
                            show_onboarding=not CONFIG.get("onboarding_seen", False),
-                           app_version=get_local_version())
+                           app_version=get_local_version(),
+                           has_scopus=bool((CONFIG.get("scopus_api_key","") or "").strip()),
+                           has_wos=bool((CONFIG.get("wos_api_key","") or "").strip()))
 
 @app.route("/onboarding/dismiss", methods=["POST"])
 def onboarding_dismiss():
@@ -1252,6 +1254,26 @@ def search_stream():
                 "index":i, "total":total_sources
             }) + "\n\n"
             yield ":keep-alive\n\n"
+
+            # Premium sources need an API key. If enabled without one, tell the
+            # user clearly instead of silently returning nothing.
+            _key_required = {
+                "scopus": ("scopus_api_key", "Scopus"),
+                "wos":    ("wos_api_key", "Web of Science"),
+            }
+            if key in _key_required:
+                cfg_field, nice = _key_required[key]
+                if not (CONFIG.get(cfg_field,"") or "").strip():
+                    yield "data: " + json.dumps({
+                        "type":"source_error", "source":label,
+                        "text":f"Add a {nice} API key in Settings to search this source."
+                    }) + "\n\n"
+                    yield "data: " + json.dumps({
+                        "type":"source_done", "source":label,
+                        "count":0, "total_pubmed":0, "running_count":len(all_results)
+                    }) + "\n\n"
+                    continue
+
             try:
                 r = fn()
                 res = r[0] if isinstance(r, tuple) else r
