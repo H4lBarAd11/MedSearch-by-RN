@@ -2105,6 +2105,10 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
         <input type="password" id="set_scopus" placeholder="get free at dev.elsevier.com">
       </div>
       <div class="settings-field">
+        <label>Scopus institutional token <span style="font-weight:normal;color:var(--text3)">— only if working off-campus</span></label>
+        <input type="password" id="set_scopus_insttoken" placeholder="optional — for remote access (request from Elsevier)">
+      </div>
+      <div class="settings-field">
         <label>Web of Science API key</label>
         <input type="password" id="set_wos" placeholder="apply at developer.clarivate.com">
       </div>
@@ -2601,6 +2605,7 @@ if (_strictEl) {
 
 // ── Search (progressive streaming) ─────────────────────────────────────────
 let searchAbortController = null;
+const erroredSources = new Set();   // sources that errored this search (don't clobber their message)
 
 function runSearch() {
   const query = document.getElementById('searchInput').value.trim();
@@ -2612,6 +2617,7 @@ function runSearch() {
   searchRunning = true;
   setSearchButtonStop(true);
   allArticles = [];
+  erroredSources.clear();   // fresh error tracking per search
   closeSynthesis();
   resetAssistantSuggestions();   // refresh suggestions for the new search
 
@@ -2798,10 +2804,14 @@ function handleSearchEvent(ev) {
     patchOneliner(ev.idx, ev.text);
   }
   else if (ev.type === 'source_done') {
-    finalizeSourceGroup(ev.source, ev.count);
+    // Don't clobber an error message that source_error already displayed
+    if (!erroredSources.has(ev.source)) {
+      finalizeSourceGroup(ev.source, ev.count);
+    }
     document.getElementById('runningCount').textContent = ev.running_count;
   }
   else if (ev.type === 'source_error') {
+    erroredSources.add(ev.source);
     finalizeSourceGroup(ev.source, 0, ev.text);
   }
   else if (ev.type === 'done') {
@@ -2897,11 +2907,16 @@ function finishSearch(query) {
     const body = g.querySelector('.source-body');
     const spin = g.querySelector('.source-spinner');
     const cards = body ? body.querySelectorAll('.article-card').length : 0;
+    const hasError = body && body.querySelector('.source-error');
     if (spin) spin.outerHTML = `<span class="source-count">${cards}</span>`;
-    if (body && !body.children.length) g.remove();
+    // Keep groups that have an error message; only remove truly empty ones
+    if (body && !body.children.length && !hasError) g.remove();
   });
 
-  if (n === 0) {
+  // Show "no results" empty state ONLY if there are no results AND no error
+  // messages to display (otherwise we'd wipe the errors).
+  const anyErrors = document.querySelector('.source-error');
+  if (n === 0 && !anyErrors) {
     document.getElementById('sourceGroups').innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -3650,6 +3665,7 @@ async function openSettings() {
     anthropic_api_key: 'set_anthropic',
     pubmed_api_key:    'set_pubmed',
     scopus_api_key:    'set_scopus',
+    scopus_insttoken:  'set_scopus_insttoken',
     wos_api_key:       'set_wos',
     unpaywall_email:   'set_email',
   };
@@ -3691,6 +3707,7 @@ async function saveSettings() {
     anthropic_api_key: document.getElementById('set_anthropic').value.trim(),
     pubmed_api_key:    document.getElementById('set_pubmed').value.trim(),
     scopus_api_key:    document.getElementById('set_scopus').value.trim(),
+    scopus_insttoken:  document.getElementById('set_scopus_insttoken').value.trim(),
     wos_api_key:       document.getElementById('set_wos').value.trim(),
     unpaywall_email:   document.getElementById('set_email').value.trim(),
   };

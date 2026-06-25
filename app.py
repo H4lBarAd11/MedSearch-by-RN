@@ -31,6 +31,7 @@ DEFAULTS = {
     "anthropic_api_key": "",
     "pubmed_api_key":    "",
     "scopus_api_key":    "",
+    "scopus_insttoken":  "",
     "wos_api_key":       "",
     "unpaywall_email":   "",
     # Mirror priority order. sci-hub.se was DNS-blocked in Jan 2026, so the
@@ -823,17 +824,41 @@ def search_biorxiv(query, server, max_r, y_from, y_to, seen):
 
 def search_scopus(query, max_r, y_from, y_to, seen):
     results = []
-    key = CONFIG.get("scopus_api_key","")
-    if not key: return results
+    key = (CONFIG.get("scopus_api_key","") or "").strip()
+    if not key:
+        raise RuntimeError("No Scopus API key set.")
     dr = (f" AND PUBYEAR > {(y_from or 1900)-1} AND PUBYEAR < {(y_to or 2099)+1}"
           if y_from or y_to else "")
-    data, status = fetch_json(
-        f"https://api.elsevier.com/content/search/scopus"
-        f"?query={urllib.parse.quote(query+dr)}&count={max_r}"
-        f"&apiKey={key}&httpAccept=application%2Fjson",
-        headers={"X-ELS-APIKey":key,"Accept":"application/json"})
-    if not data or status!=200: return results
+    # Scopus authenticates by API key PLUS institutional IP range. From off-campus
+    # an institutional token (X-ELS-Insttoken) is also required — send it if set.
+    headers = {"X-ELS-APIKey": key, "Accept": "application/json"}
+    insttoken = (CONFIG.get("scopus_insttoken","") or "").strip()
+    if insttoken:
+        headers["X-ELS-Insttoken"] = insttoken
+    url = (f"https://api.elsevier.com/content/search/scopus"
+           f"?query={urllib.parse.quote(query+dr)}&count={max_r}")
+    data, status = fetch_json(url, headers=headers)
+    if status != 200:
+        # Surface a clear, actionable error instead of failing silently
+        if status == 401:
+            raise RuntimeError("Scopus rejected the request (401). The API key may be wrong, "
+                               "or you're off your institution's network — Scopus needs you on "
+                               "the campus IP range, or an institutional token (set in config).")
+        if status == 403:
+            raise RuntimeError("Scopus access forbidden (403). Your key may lack entitlement "
+                               "for the Search API, or your subscription doesn't cover it.")
+        if status == 429:
+            raise RuntimeError("Scopus quota exceeded (429). The weekly request limit for this "
+                               "key is depleted; it resets ~1 week after first use.")
+        if status == 400:
+            raise RuntimeError("Scopus rejected the query (400) — likely a query-syntax issue.")
+        raise RuntimeError(f"Scopus returned HTTP {status}.")
+    if not data:
+        return results
     for e in data.get("search-results",{}).get("entry",[]):
+        # An error can also come back inside a 200 body
+        if "error" in e:
+            raise RuntimeError(f"Scopus: {e.get('error')}")
         title    = e.get("dc:title","No title")
         creator  = e.get("dc:creator","Unknown")
         pub      = e.get("prism:publicationName","")
@@ -855,13 +880,22 @@ def search_scopus(query, max_r, y_from, y_to, seen):
 
 def search_wos(query, max_r, y_from, y_to, seen):
     results = []
-    key = CONFIG.get("wos_api_key","")
-    if not key: return results
+    key = (CONFIG.get("wos_api_key","") or "").strip()
+    if not key:
+        raise RuntimeError("No Web of Science API key set.")
     data, status = fetch_json(
         f"https://api.clarivate.com/apis/wos-starter/v1/documents"
         f"?db=WOS&q={urllib.parse.quote(query)}&limit={max_r}&page=1",
         headers={"X-ApiKey":key})
-    if not data or status!=200: return results
+    if status != 200:
+        if status in (401, 403):
+            raise RuntimeError(f"Web of Science rejected the request ({status}). The API key may "
+                               "be wrong/expired, or not entitled to the WoS Starter API.")
+        if status == 429:
+            raise RuntimeError("Web of Science quota exceeded (429). Try again later.")
+        raise RuntimeError(f"Web of Science returned HTTP {status}.")
+    if not data:
+        return results
     for h in data.get("hits",[]):
         src     = h.get("source",{})
         year    = str(src.get("publishYear","n.d."))
@@ -1491,7 +1525,7 @@ def settings():
     if request.method == "POST":
         data = request.json
         for k in ("anthropic_api_key","pubmed_api_key","scopus_api_key",
-                  "wos_api_key","unpaywall_email"):
+                  "scopus_insttoken","wos_api_key","unpaywall_email"):
             if k in data and data[k]: CONFIG[k] = data[k].strip()
         save_config(CONFIG)
         return jsonify({"ok": True})
