@@ -632,7 +632,7 @@ def build_pubmed_term(query, strict=True):
     return " AND ".join(f"{w}[tiab]" for w in words)
 
 def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
-                  extra_filter=None, source_label="PubMed"):
+                  extra_filter=None, source_label="PubMed", sort="relevance"):
     results = []
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     kp   = f"&api_key={CONFIG['pubmed_api_key']}" if CONFIG.get("pubmed_api_key") else ""
@@ -641,9 +641,10 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
     term = build_pubmed_term(query, strict=strict)
     if extra_filter:
         term = f"({term}) AND {extra_filter}"
-    # sort=relevance → PubMed "Best Match" ranking (same as the website default)
+    # sort=relevance → PubMed "Best Match"; sort=date → most recent first
+    sort_param = "date" if sort == "date" else "relevance"
     esearch = (f"{base}/esearch.fcgi?db=pubmed&term={urllib.parse.quote(term)}"
-               f"&retmax={max_r}&sort=relevance&retmode=json{kp}{dp}")
+               f"&retmax={max_r}&sort={sort_param}&retmode=json{kp}{dp}")
     data, _ = fetch_json(esearch)
     if not data: return results, 0
     ids   = data.get("esearchresult",{}).get("idlist",[])
@@ -719,7 +720,7 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
         time.sleep(0.12)
     return results, total
 
-def search_cochrane(query, max_r, y_from, y_to, seen, strict=True):
+def search_cochrane(query, max_r, y_from, y_to, seen, strict=True, sort="relevance"):
     """
     Cochrane systematic reviews are indexed in PubMed under the journal
     'Cochrane Database of Systematic Reviews'. We search PubMed restricted to
@@ -729,13 +730,15 @@ def search_cochrane(query, max_r, y_from, y_to, seen, strict=True):
     cochrane_filter = '"Cochrane Database Syst Rev"[ta]'
     res, total = search_pubmed(query, max_r, y_from, y_to, seen,
                                strict=strict, extra_filter=cochrane_filter,
-                               source_label="Cochrane")
+                               source_label="Cochrane", sort=sort)
     return res, total
 
-def search_arxiv(query, max_r, y_from, y_to, seen):
+def search_arxiv(query, max_r, y_from, y_to, seen, sort="relevance"):
     results = []
+    # sortBy=relevance ↔ submittedDate (most recent first)
+    sort_by = "submittedDate" if sort == "date" else "relevance"
     body, _ = http_get(f"https://export.arxiv.org/api/query?search_query=all:"
-                       f"{urllib.parse.quote(query)}&max_results={max_r}&sortBy=relevance")
+                       f"{urllib.parse.quote(query)}&max_results={max_r}&sortBy={sort_by}&sortOrder=descending")
     if not body: return results
     ns   = {"a":"http://www.w3.org/2005/Atom"}
     root = ET.fromstring(body)
@@ -757,10 +760,13 @@ def search_arxiv(query, max_r, y_from, y_to, seen):
                         "scihub":None,"oneliner":None})
     return results
 
-def search_clinicaltrials(query, max_r, y_from, y_to, seen):
+def search_clinicaltrials(query, max_r, y_from, y_to, seen, sort="relevance"):
     results = []
+    # ClinicalTrials v2: default ordering is relevance; LastUpdatePostDate:desc
+    # gives most-recently-updated first.
+    sort_p = "&sort=LastUpdatePostDate%3Adesc" if sort == "date" else ""
     data, _ = fetch_json(f"https://clinicaltrials.gov/api/v2/studies"
-                         f"?query.term={urllib.parse.quote(query)}&pageSize={max_r}&format=json")
+                         f"?query.term={urllib.parse.quote(query)}&pageSize={max_r}&format=json{sort_p}")
     if not data: return results
     for study in data.get("studies",[]):
         proto  = study.get("protocolSection",{})
@@ -792,7 +798,7 @@ def search_clinicaltrials(query, max_r, y_from, y_to, seen):
 # endpoint (only date-range or DOI fetch), and the PMC-based workaround simply
 # duplicated PubMed results via dedup. arXiv stays (it has a real search API).
 
-def search_scopus(query, max_r, y_from, y_to, seen):
+def search_scopus(query, max_r, y_from, y_to, seen, sort="relevance"):
     results = []
     key = (CONFIG.get("scopus_api_key","") or "").strip()
     if not key:
@@ -805,8 +811,10 @@ def search_scopus(query, max_r, y_from, y_to, seen):
     insttoken = (CONFIG.get("scopus_insttoken","") or "").strip()
     if insttoken:
         headers["X-ELS-Insttoken"] = insttoken
+    # sort=relevancy ↔ -coverDate (minus prefix = descending → newest first)
+    sort_p = "&sort=-coverDate" if sort == "date" else "&sort=relevancy"
     url = (f"https://api.elsevier.com/content/search/scopus"
-           f"?query={urllib.parse.quote(query+dr)}&count={max_r}")
+           f"?query={urllib.parse.quote(query+dr)}&count={max_r}{sort_p}")
     data, status = fetch_json(url, headers=headers)
     if status != 200:
         # Surface a clear, actionable error instead of failing silently
@@ -848,14 +856,16 @@ def search_scopus(query, max_r, y_from, y_to, seen):
         time.sleep(0.2)
     return results
 
-def search_wos(query, max_r, y_from, y_to, seen):
+def search_wos(query, max_r, y_from, y_to, seen, sort="relevance"):
     results = []
     key = (CONFIG.get("wos_api_key","") or "").strip()
     if not key:
         raise RuntimeError("No Web of Science API key set.")
+    # WoS Starter sortField: RS = Relevance, PY+D = Publication Year descending
+    sort_p = "&sortField=PY%2BD" if sort == "date" else "&sortField=RS"
     data, status = fetch_json(
         f"https://api.clarivate.com/apis/wos-starter/v1/documents"
-        f"?db=WOS&q={urllib.parse.quote(query)}&limit={max_r}&page=1",
+        f"?db=WOS&q={urllib.parse.quote(query)}&limit={max_r}&page=1{sort_p}",
         headers={"X-ApiKey":key})
     if status != 200:
         if status in (401, 403):
@@ -1158,6 +1168,9 @@ def search_stream():
     y_from  = int(data["year_from"]) if data.get("year_from") else None
     y_to    = int(data["year_to"])   if data.get("year_to")   else None
     strict  = data.get("strict", True)   # strict by default
+    sort    = data.get("sort", "relevance")   # "relevance" (default) or "date"
+    if sort not in ("relevance", "date"):
+        sort = "relevance"
 
     if not query:
         return Response("data: "+json.dumps({"type":"error","text":"Empty query"})+"\n\n",
@@ -1176,22 +1189,22 @@ def search_stream():
         # here (before general PubMed) labels them as Cochrane in the dedup.
         if "cochrane" in sources or "all" in sources:
             runners.append(("cochrane", "Cochrane",
-                            lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict)))
+                            lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
         if "pubmed" in sources or "all" in sources:
             runners.append(("pubmed", "PubMed",
-                            lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict)))
+                            lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
         if "scopus" in sources or "all" in sources:
             runners.append(("scopus", "Scopus",
-                            lambda: (search_scopus(query, max_r, y_from, y_to, seen), 0)))
+                            lambda: (search_scopus(query, max_r, y_from, y_to, seen, sort=sort), 0)))
         if "wos" in sources or "all" in sources:
             runners.append(("wos", "Web of Science",
-                            lambda: (search_wos(query, max_r, y_from, y_to, seen), 0)))
+                            lambda: (search_wos(query, max_r, y_from, y_to, seen, sort=sort), 0)))
         if "clinicaltrials" in sources or "all" in sources:
             runners.append(("clinicaltrials", "ClinicalTrials.gov",
-                            lambda: (search_clinicaltrials(query, max_r, y_from, y_to, seen), 0)))
+                            lambda: (search_clinicaltrials(query, max_r, y_from, y_to, seen, sort=sort), 0)))
         if "arxiv" in sources or "all" in sources:
             runners.append(("arxiv", "arXiv",
-                            lambda: (search_arxiv(query, max_r, y_from, y_to, seen), 0)))
+                            lambda: (search_arxiv(query, max_r, y_from, y_to, seen, sort=sort), 0)))
         return runners
 
     def generate():
@@ -1386,6 +1399,56 @@ def _is_scihub_url(url):
         return False
     return any(h == host or h.endswith("." + host) for host in hosts if host)
 
+def _abs_url(href, page_url):
+    """Resolve a possibly-relative/protocol-relative href against page_url."""
+    if not href:
+        return None
+    href = href.strip().split("#")[0]
+    if not href:
+        return None
+    if href.startswith("//"):
+        scheme = urllib.parse.urlparse(page_url).scheme or "https"
+        return f"{scheme}:{href}"
+    if href.startswith("/"):
+        base = urllib.parse.urlparse(page_url)
+        return f"{base.scheme}://{base.netloc}{href}"
+    if not href.startswith(("http://", "https://")):
+        return urllib.parse.urljoin(page_url, href)
+    return href
+
+def _extract_pdf_url_from_landing(html_text, page_url):
+    """
+    Many publisher/repository 'open access' links point at an HTML landing page
+    rather than a direct PDF. Most academic pages advertise the real PDF via a
+    <meta name="citation_pdf_url"> tag (Google Scholar convention); some embed it
+    in <iframe>/<embed> or link it with a .pdf href. Return the best PDF URL or None.
+    """
+    # 1. citation_pdf_url meta tag — the most reliable signal across publishers
+    m = re.search(
+        r'<meta[^>]+name=["\']citation_pdf_url["\'][^>]+content=["\']([^"\']+)["\']',
+        html_text, flags=re.IGNORECASE)
+    if not m:
+        m = re.search(
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']citation_pdf_url["\']',
+            html_text, flags=re.IGNORECASE)
+    if m:
+        u = _abs_url(m.group(1), page_url)
+        if u:
+            return u
+    # 2. iframe/embed/href pointing at something PDF-ish
+    candidates = []
+    for pat in [
+        r'<iframe[^>]+src\s*=\s*["\']([^"\']+)["\']',
+        r'<embed[^>]+src\s*=\s*["\']([^"\']+)["\']',
+        r'href\s*=\s*["\']([^"\']+\.pdf[^"\']*)["\']',
+    ]:
+        candidates += re.findall(pat, html_text, flags=re.IGNORECASE)
+    for c in candidates:
+        u = _abs_url(c, page_url)
+        if u and (".pdf" in u.lower() or "/pdf" in u.lower()):
+            return u
+    return None
+
 def _extract_scihub_pdf_url(html_text, page_url):
     """
     Sci-Hub returns an HTML page with the actual PDF embedded in an <iframe>,
@@ -1404,50 +1467,48 @@ def _extract_scihub_pdf_url(html_text, page_url):
         candidates += re.findall(pat, html_text, flags=re.IGNORECASE)
 
     for c in candidates:
-        c = c.strip()
-        if not c:
+        u = _abs_url(c, page_url)
+        if not u:
             continue
-        # Strip any #fragment (Sci-Hub adds #view=FitH etc.)
-        c = c.split("#")[0]
-        if not c:
-            continue
-        # Resolve protocol-relative (//host/path) and relative URLs
-        if c.startswith("//"):
-            scheme = urllib.parse.urlparse(page_url).scheme or "https"
-            c = f"{scheme}:{c}"
-        elif c.startswith("/"):
-            base = urllib.parse.urlparse(page_url)
-            c = f"{base.scheme}://{base.netloc}{c}"
-        elif not c.startswith(("http://", "https://")):
-            c = urllib.parse.urljoin(page_url, c)
-        # Looks like a PDF? (Sci-Hub iframes usually end .pdf or contain /pdf/)
-        low = c.lower()
+        low = u.lower()
         if ".pdf" in low or "/pdf" in low or "downloads" in low:
-            return c
+            return u
     # Fallback: if exactly one iframe/embed was found, use it even without .pdf
     if candidates:
-        c = candidates[0].split("#")[0].strip()
-        if c.startswith("//"):
-            scheme = urllib.parse.urlparse(page_url).scheme or "https"
-            c = f"{scheme}:{c}"
-        elif c.startswith("/"):
-            base = urllib.parse.urlparse(page_url)
-            c = f"{base.scheme}://{base.netloc}{c}"
-        elif not c.startswith(("http://", "https://")):
-            c = urllib.parse.urljoin(page_url, c)
-        return c or None
+        return _abs_url(candidates[0], page_url)
     return None
 
-def _fetch_url_bytes(url, timeout=30):
-    """Fetch a URL with a browser-like UA. Returns (data_bytes, content_type)."""
+
+def _fetch_url_bytes(url, timeout=30, _redirects=0):
+    """
+    Fetch a URL with browser-like headers and return (data_bytes, content_type).
+    Handles gzip/deflate decompression and follows redirects (incl. cross-scheme
+    and meta/JS-less Location headers), which the naive urlopen path missed.
+    """
+    import gzip, zlib
     req = urllib.request.Request(url, headers={
-        "User-Agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) "
-                     "AppleWebKit/537.36 (KHTML, like Gecko) "
-                     "Chrome/120.0 Safari/537.36",
-        "Accept":"application/pdf,text/html,*/*",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "application/pdf,text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate",
+        "Referer": f"{urllib.parse.urlparse(url).scheme}://{urllib.parse.urlparse(url).netloc}/",
     })
     upstream = urllib.request.urlopen(req, timeout=timeout)
-    return upstream.read(), upstream.headers.get("Content-Type","").lower()
+    raw = upstream.read()
+    enc = (upstream.headers.get("Content-Encoding", "") or "").lower()
+    # Decompress if the server compressed the body
+    try:
+        if "gzip" in enc:
+            raw = gzip.decompress(raw)
+        elif "deflate" in enc:
+            try: raw = zlib.decompress(raw)
+            except Exception: raw = zlib.decompress(raw, -zlib.MAX_WBITS)
+    except Exception:
+        pass   # if decompression fails, fall back to raw bytes
+    ctype = upstream.headers.get("Content-Type", "").lower()
+    return raw, ctype
 
 @app.route("/pdf_proxy")
 def pdf_proxy():
@@ -1490,11 +1551,27 @@ def pdf_proxy():
             data, ctype = _fetch_url_bytes(pdf_url)
             is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
 
-        # Still not a PDF (paywall/landing page).
+        # Non-Sci-Hub HTML: likely an open-access *landing page* rather than a
+        # direct PDF. Try to find the real PDF link advertised on the page
+        # (citation_pdf_url meta tag, embedded viewer, or a .pdf link).
+        elif not is_pdf and "html" in ctype:
+            try:
+                html_text = data.decode("utf-8", errors="replace")
+            except Exception:
+                html_text = ""
+            pdf_url = _extract_pdf_url_from_landing(html_text, url)
+            if pdf_url and pdf_url != url:
+                try:
+                    data, ctype = _fetch_url_bytes(pdf_url)
+                    is_pdf = ("pdf" in ctype) or data[:5] == b"%PDF-"
+                except Exception:
+                    pass
+
+        # Still not a PDF (paywall/landing page with no discoverable PDF).
         if not is_pdf:
             return jsonify({"error":"not_pdf",
-                            "message":"This link returned a web page, not a direct PDF. "
-                                      "Opening it in your browser may work."}), 415
+                            "message":"This link opens a web page rather than a direct PDF. "
+                                      "Opening it in your browser should work."}), 415
 
         resp = Response(data, mimetype="application/pdf")
         resp.headers["Content-Disposition"] = "inline; filename=article.pdf"

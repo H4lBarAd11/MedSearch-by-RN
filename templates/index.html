@@ -504,7 +504,34 @@
     text-align: center;
   }
 
-  /* ── Status bar ──────────────────────────────────────────────────────── */
+  /* ── Sort toggle (Relevance / Recent) ─────────────────────────────────── */
+  .sort-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+  .sort-opt {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: var(--font);
+    font-size: 0.78rem;
+    color: var(--text3);
+    padding: 6px 12px;
+    white-space: nowrap;
+    transition: all var(--transition);
+  }
+  .sort-opt:hover { color: var(--text2); background: var(--bg3); }
+  .sort-opt.active {
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .sort-opt + .sort-opt { border-left: 1px solid var(--border); }
+
   .status-bar {
     display: flex;
     align-items: center;
@@ -1858,7 +1885,7 @@
   /* toast */
   .toast {
     position: fixed;
-    bottom: 24px;
+    bottom: 92px;   /* sits above the assistant bubble (56px + margins) */
     right: 24px;
     background: var(--bg3);
     border: 1px solid var(--border2);
@@ -2005,6 +2032,10 @@
         <div class="max-results-wrap">
           <span class="max-results-label">Max results</span>
           <input class="max-results-input" type="number" id="maxResults" value="10" min="1" max="50">
+        </div>
+        <div class="sort-toggle" id="sortToggle" title="Order results by best match or by publication date">
+          <button type="button" class="sort-opt active" data-sort="relevance" onclick="setSortMode('relevance')">Relevance</button>
+          <button type="button" class="sort-opt" data-sort="date" onclick="setSortMode('date')">Recent</button>
         </div>
         <button class="search-btn" id="searchBtn" onclick="runSearch()">Search</button>
       </div>
@@ -2509,6 +2540,22 @@ window.addEventListener('load', () => { applyAIState(); });
 let synthesisOpen  = false;
 let searchRunning  = false;
 let lastSearchParams = null;   // for saving searches
+let sortMode = 'relevance';    // 'relevance' (default) or 'date'
+
+// Toggle the Relevance / Recent sort control.
+// suppressRerun=true updates the UI state only (used when another flow, e.g.
+// running a saved search, will trigger the search itself).
+function setSortMode(mode, suppressRerun) {
+  if (mode !== 'relevance' && mode !== 'date') mode = 'relevance';
+  sortMode = mode;
+  document.querySelectorAll('#sortToggle .sort-opt').forEach(b => {
+    b.classList.toggle('active', b.dataset.sort === mode);
+  });
+  // If results are already on screen, re-run so the new ordering applies.
+  if (!suppressRerun && allArticles.filter(Boolean).length && !searchRunning) {
+    runSearch();
+  }
+}
 
 // ── DB checkboxes ─────────────────────────────────────────────────────────
 // Which premium DBs currently have a key (set at render, updated on save)
@@ -2667,6 +2714,7 @@ function runSearch() {
     year_from:   document.getElementById('yearFrom').value || null,
     year_to:     document.getElementById('yearTo').value   || null,
     strict:      document.getElementById('strictToggle').checked,
+    sort:        sortMode,
   };
 
   // Scaffold the results area with header + a live status line
@@ -2799,6 +2847,7 @@ function resetToHome() {
   const yt = document.getElementById('yearTo');    if (yt) yt.value = '';
   const mr = document.getElementById('maxResults');if (mr) mr.value = 10;
   const strict = document.getElementById('strictToggle'); if (strict) strict.checked = true;
+  setSortMode('relevance', true);   // back to default ordering
   if (typeof updateQueryHint === 'function') updateQueryHint();
 
   // Restore the welcome screen
@@ -2887,6 +2936,24 @@ function appendArticleCard(source, article) {
   body.appendChild(card);
 }
 
+// Reorder cards within each source group by publication year, newest first.
+// Used in "Recent" sort mode. Cards carry their global index in the DOM id,
+// and allArticles[idx].year holds the year, so we can sort by that.
+function sortGroupsByDate() {
+  const yearOf = card => {
+    const idx = parseInt((card.id || '').replace('card_', ''), 10);
+    const a = allArticles[idx];
+    const y = a && a.year ? parseInt(String(a.year).slice(0, 4), 10) : NaN;
+    return isNaN(y) ? -Infinity : y;   // undated items sink to the bottom
+  };
+  document.querySelectorAll('.source-body').forEach(body => {
+    const cards = Array.from(body.querySelectorAll('.article-card'));
+    if (cards.length < 2) return;
+    cards.sort((a, b) => yearOf(b) - yearOf(a));   // descending
+    cards.forEach(c => { c.style.animation = ''; body.appendChild(c); });  // re-append in order
+  });
+}
+
 // Patch a one-liner into an already-displayed card
 function patchOneliner(idx, text) {
   if (allArticles[idx]) allArticles[idx].oneliner = text;
@@ -2949,6 +3016,11 @@ function finishSearch(query) {
     // Keep groups that have an error message; only remove truly empty ones
     if (body && !body.children.length && !hasError) g.remove();
   });
+
+  // In "Recent" mode, guarantee newest-first ordering within each source group
+  // (the per-source API date sort usually handles this, but this is a safety net
+  // for sources whose ordering can't be fully trusted, e.g. Cochrane).
+  if (sortMode === 'date') sortGroupsByDate();
 
   // Show "no results" empty state ONLY if there are no results AND no error
   // messages to display (otherwise we'd wipe the errors).
@@ -3092,6 +3164,7 @@ function closeSynthesis() {
 // ── AI on/off toggle ────────────────────────────────────────────────────────
 let aiEnabled = {{ 'true' if ai_on else 'false' }};
 const aiHasKey = {{ 'true' if has_ai_key else 'false' }};
+let assistantOpen = false;   // declared here so applyAIState() can read it safely on load
 
 function toggleAI() {
   // If there's no API key at all, turning "on" makes no sense — guide them.
@@ -3925,6 +3998,8 @@ function runSaved(s) {
   document.getElementById('yearFrom').value    = s.year_from || '';
   document.getElementById('yearTo').value      = s.year_to   || '';
   document.getElementById('strictToggle').checked = (s.strict !== false);
+  // Restore sort mode (defaults to relevance for older saved searches)
+  setSortMode(s.sort === 'date' ? 'date' : 'relevance', true);
   updateQueryHint();
 
   // Restore database selection
