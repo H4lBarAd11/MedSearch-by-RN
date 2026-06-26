@@ -532,6 +532,20 @@
   }
   .sort-opt + .sort-opt { border-left: 1px solid var(--border); }
 
+  .proxy-picker {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text2);
+    font-size: 0.76rem;
+    font-family: var(--font);
+    padding: 6px 8px;
+    cursor: pointer;
+    outline: none;
+    max-width: 160px;
+  }
+  .proxy-picker:hover { border-color: var(--accent); }
+
   .status-bar {
     display: flex;
     align-items: center;
@@ -1342,6 +1356,151 @@
     margin-bottom: 4px;
     font-weight: 500;
   }
+  .settings-hint {
+    font-size: 0.7rem;
+    color: var(--text3);
+    line-height: 1.45;
+    margin-top: 5px;
+  }
+  .settings-diag {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .proxy-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 7px 9px;
+    margin-bottom: 5px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg2);
+  }
+  .proxy-row.active { border-color: var(--accent); background: var(--accent-tint); }
+  .proxy-row .proxy-active { flex-shrink: 0; cursor: pointer; accent-color: var(--accent); }
+  .proxy-row .proxy-active:disabled { cursor: not-allowed; }
+  .proxy-row .proxy-name {
+    font-size: 0.82rem;
+    color: var(--text);
+    font-weight: 600;
+    min-width: 56px;
+  }
+  .proxy-status { font-size: 0.68rem; margin-left: 2px; }
+  .proxy-status.set   { color: var(--green); }
+  .proxy-status.unset { color: var(--text3); font-style: italic; }
+  .proxy-row .proxy-edit {
+    margin-left: auto;
+    background: none;
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 3px 9px;
+  }
+  .proxy-row .proxy-edit:hover { border-color: var(--accent); color: var(--accent); }
+  .proxy-row .proxy-del {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 4px;
+  }
+  .proxy-row .proxy-del:hover { color: var(--red); }
+  .proxy-add-btn { margin-top: 6px; font-size: 0.76rem; padding: 5px 10px; }
+
+  /* Proxy editor popup */
+  .proxy-editor-modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius2);
+    width: 100%;
+    max-width: 460px;
+    padding: 24px 24px 20px;
+    box-shadow: 0 20px 60px rgba(94,62,38,0.22);
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .proxy-editor-title {
+    font-size: 1.05rem;
+    font-weight: bold;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .proxy-editor-intro {
+    font-size: 0.82rem;
+    color: var(--text2);
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+  .proxy-editor-help {
+    font-size: 0.74rem;
+    color: var(--text3);
+    line-height: 1.55;
+    background: var(--bg3);
+    border-radius: var(--radius);
+    padding: 11px 13px;
+    margin-bottom: 16px;
+  }
+  .proxy-editor-help strong { color: var(--text2); }
+  .proxy-editor-help ul { margin: 6px 0 0; padding-left: 18px; }
+  .proxy-editor-help li { margin-bottom: 4px; }
+  .proxy-editor-help code {
+    background: var(--bg4);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+  }
+  .proxy-editor-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
+  .settings-diag summary {
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text2);
+    font-weight: 500;
+    user-select: none;
+  }
+  .settings-diag summary:hover { color: var(--accent); }
+  .diag-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .diag-row input {
+    flex: 1;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 0.82rem;
+    padding: 7px 10px;
+    outline: none;
+    font-family: var(--mono);
+  }
+  .diag-output {
+    margin-top: 10px;
+    background: var(--bg4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--text);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 260px;
+    overflow-y: auto;
+  }
   .settings-field input {
     width: 100%;
     background: var(--bg3);
@@ -2037,6 +2196,7 @@
           <button type="button" class="sort-opt active" data-sort="relevance" onclick="setSortMode('relevance')">Relevance</button>
           <button type="button" class="sort-opt" data-sort="date" onclick="setSortMode('date')">Recent</button>
         </div>
+        <select class="proxy-picker" id="proxyPicker" title="Library access for paywalled papers" onchange="onProxyPick(this.value)" style="display:none"></select>
         <button class="search-btn" id="searchBtn" onclick="runSearch()">Search</button>
       </div>
       <div class="search-hint">
@@ -2177,7 +2337,24 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
       <div class="settings-field">
         <label>Email for Unpaywall (open-access lookup)</label>
         <input type="email" id="set_email" placeholder="your@email.com">
+        <div class="settings-hint">Improves free-PDF detection. Without it, fewer papers show a “Read PDF” button (you'll see “DOI” instead). Any real email works; it's only sent to Unpaywall as a courtesy contact.</div>
       </div>
+      <div class="settings-field">
+        <label>Institutional libraries <span style="font-weight:normal;color:var(--text3)">— open paywalled papers via your library</span></label>
+        <div id="proxyList"></div>
+        <button class="btn-secondary proxy-add-btn" onclick="openProxyEditor()">+ Add another institution</button>
+        <div class="settings-hint">Pick the library you have access to (also switchable from the search bar). UniTN is pre-configured; set up ASUIT or FBK with their proxy address, or add another institution. DOI links then open through that library so subscribed papers load with your access.</div>
+      </div>
+
+      <details class="settings-diag">
+        <summary>🔧 PDF lookup diagnostic</summary>
+        <div class="settings-hint" style="margin-top:8px">Paste a DOI of a paper that shows “DOI” when you expect a free PDF, then Test. This shows what the open-access lookup returns — paste the result back to support if a paper isn't being found.</div>
+        <div class="diag-row">
+          <input type="text" id="diagDoi" placeholder="10.xxxx/yyyy (or paste a doi.org link)">
+          <button class="btn-secondary" onclick="runOaDiagnostic()">Test</button>
+        </div>
+        <pre class="diag-output" id="diagOutput" style="display:none"></pre>
+      </details>
     </div>
     <div class="settings-footer">
       <button class="btn-secondary" onclick="closeSettings()">Cancel</button>
@@ -2314,6 +2491,36 @@ Example: glioblastoma AND temozolomide[tiab] NOT pediatric">ⓘ advanced syntax<
     <div class="apikey-prompt-actions">
       <button class="btn-secondary" onclick="closeApiKeyPrompt()">Maybe later</button>
       <button class="btn-primary" onclick="goToSettingsFromPrompt()">Open Settings</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Institution proxy editor popup ─────────────────────────────────── -->
+<div class="modal-overlay" id="proxyEditorOverlay" onclick="if(event.target===this)closeProxyEditor()">
+  <div class="proxy-editor-modal">
+    <div class="proxy-editor-title" id="proxyEditorTitle">Add an institution</div>
+    <div class="proxy-editor-intro">
+      Enter your library's proxy address so paywalled papers your institution subscribes to open with your access.
+    </div>
+    <div class="proxy-editor-help">
+      <strong>How to find it:</strong> While off-campus, open any journal article <em>through your library's website</em>. Once it loads, look at the browser address bar — your library's proxy host appears in front of the publisher's address. Examples of what to paste:
+      <ul>
+        <li>a host like <code>https://ezp.biblio.unitn.it</code></li>
+        <li>or a login prefix ending in <code>?url=</code>, e.g. <code>https://uni.idm.oclc.org/login?url=</code></li>
+      </ul>
+      If unsure, ask your library for the “EZProxy URL.”
+    </div>
+    <div class="settings-field" id="proxyEditorLabelField">
+      <label>Institution name</label>
+      <input type="text" id="proxyEditorLabel" placeholder="e.g. My University">
+    </div>
+    <div class="settings-field">
+      <label>Proxy address</label>
+      <input type="text" id="proxyEditorUrl" placeholder="https://ezp.biblio.example.edu">
+    </div>
+    <div class="proxy-editor-actions">
+      <button class="btn-secondary" onclick="closeProxyEditor()">Close</button>
+      <button class="btn-primary" onclick="saveProxyEditor()">Save</button>
     </div>
   </div>
 </div>
@@ -2535,12 +2742,85 @@ window.addEventListener('load', () => {
 });
 
 // Apply the initial AI on/off state to the UI (hides assistant bubble if off)
-window.addEventListener('load', () => { applyAIState(); });
+window.addEventListener('load', () => { applyAIState(); renderProxyPicker(); });
 
 let synthesisOpen  = false;
 let searchRunning  = false;
 let lastSearchParams = null;   // for saving searches
 let sortMode = 'relevance';    // 'relevance' (default) or 'date'
+
+// Predefined Trentino research institutions (always shown, in this order).
+// URLs are filled in by the user; UniTN's is known and pre-filled.
+const PREDEFINED_INSTITUTIONS = [
+  {id: 'unitn', label: 'UniTN', url: 'https://ezp.biblio.unitn.it', predefined: true},
+  {id: 'asuit', label: 'ASUIT', url: '', predefined: true},
+  {id: 'fbk',   label: 'FBK',   url: '', predefined: true},
+];
+
+// Saved proxies from config: a list of {id?, label, url}. Custom ones have no id.
+let savedProxies = {{ institution_proxies | tojson }};
+let activeProxy = {{ active_proxy | tojson }};
+
+// Merge predefined institutions with saved data: predefined keep their slot
+// (taking a saved URL if the user set one), then any custom institutions follow.
+function buildInstitutions() {
+  const byId = {};
+  (savedProxies || []).forEach(p => { if (p.id) byId[p.id] = p; });
+  const merged = PREDEFINED_INSTITUTIONS.map(base => {
+    const saved = byId[base.id];
+    return {
+      id: base.id,
+      label: base.label,
+      url: saved && saved.url != null ? saved.url : base.url,
+      predefined: true,
+    };
+  });
+  // Append custom (non-predefined) institutions
+  (savedProxies || []).forEach(p => {
+    if (!p.id) merged.push({id: null, label: p.label || 'Institution', url: p.url || '', predefined: false});
+  });
+  return merged;
+}
+
+let institutionProxies = buildInstitutions();
+
+// The currently-active proxy URL (or '' if none / disabled / unset)
+function currentProxyUrl() {
+  if (activeProxy === -1) return '';
+  const p = institutionProxies[activeProxy];
+  return p && p.url ? p.url.trim() : '';
+}
+
+// Wrap a URL in the active institutional proxy so paywalled-but-subscribed
+// papers open through the user's library. No-op if no proxy is active.
+// Handles two EZProxy modes plus OpenAthens:
+//   1) URL-prefix / login style:  https://login.ezproxy.uni.edu/login?url=
+//   2) hostname-rewriting style:  https://ezp.biblio.unitn.it
+function proxify(url) {
+  const p = currentProxyUrl();
+  if (!p || !url) return url;
+
+  // ── Mode 1: prefix style (contains/ends with "url=") ──────────────────
+  if (/url=$/i.test(p) || p.endsWith('=') || /\?url=/i.test(p)) {
+    return (/\?url=/i.test(p) ? p : p) + encodeURIComponent(url);
+  }
+
+  // Bare proxy domain (strip scheme/path)
+  let proxyDomain = p.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+
+  // ── Mode 2: hostname-rewriting (e.g. *.ezp.biblio.unitn.it) ───────────
+  if (proxyDomain && !/\//.test(p.replace(/^https?:\/\//i, '')) && !p.includes('?')) {
+    try {
+      const u = new URL(url);
+      const rewrittenHost = u.hostname.replace(/-/g, '--').replace(/\./g, '-')
+                            + '.' + proxyDomain;
+      return `${u.protocol}//${rewrittenHost}${u.pathname}${u.search}${u.hash}`;
+    } catch (e) { return url; }
+  }
+
+  // ── Fallback: append after the proxy host ─────────────────────────────
+  return p.replace(/\/$/, '') + '/' + url.replace(/^https?:\/\//, '');
+}
 
 // Toggle the Relevance / Recent sort control.
 // suppressRerun=true updates the UI state only (used when another flow, e.g.
@@ -3054,8 +3334,17 @@ function makeCard(a) {
   let links = '';
   if (a.access_kind === 'open' && a.access_link)
     links += `<button class="link-btn open-access" onclick="openPdf('${escAttr(a.access_link)}', '${escAttr(a.title || 'PDF')}')">⬤ Read PDF</button>`;
-  if (a.access_kind === 'doi' && a.access_link)
-    links += `<a class="link-btn doi" href="${escHtml(a.access_link)}" target="_blank">⬤ DOI</a>`;
+  if (a.access_kind === 'doi' && a.access_link) {
+    const hasProxy = !!currentProxyUrl();
+    const doiHref = proxify(a.access_link);
+    if (hasProxy) {
+      // Try to open the proxied paper in the in-app viewer (falls back to
+      // browser automatically if the proxy needs a browser login session).
+      links += `<button class="link-btn doi" onclick="openPdf('${escAttr(doiHref)}', '${escAttr(a.title || 'PDF')}', {proxied:true})">⬤ DOI (via library)</button>`;
+    } else {
+      links += `<a class="link-btn doi" href="${escHtml(doiHref)}" target="_blank">⬤ DOI</a>`;
+    }
+  }
   if (a.scihub && a.scihub.length) {
     // Normalize: support old single-string format too (defensive)
     const mirrors = Array.isArray(a.scihub) ? a.scihub : [a.scihub];
@@ -3445,7 +3734,9 @@ function _slugifyPdfName(title) {
   return (base || 'article') + '.pdf';
 }
 
-function openPdf(url, title) {
+function openPdf(url, title, opts) {
+  opts = opts || {};
+  const isProxied = !!opts.proxied;
   const overlay = document.getElementById('pdfOverlay');
   const loading = document.getElementById('pdfLoading');
   const titleEl = document.getElementById('pdfTitle');
@@ -3464,7 +3755,9 @@ function openPdf(url, title) {
   // Sci-Hub takes two hops (page → embedded PDF), so signal it may be slower
   const isScihub = /sci-hub/i.test(url);
   document.getElementById('pdfLoadingText').textContent =
-    isScihub ? 'Fetching from Sci-Hub…' : 'Loading PDF…';
+    isScihub ? 'Fetching from Sci-Hub…'
+    : isProxied ? 'Trying via your library…'
+    : 'Loading PDF…';
   const oldErr = document.getElementById('pdfErrorPanel');
   if (oldErr) oldErr.remove();
 
@@ -3484,6 +3777,12 @@ function openPdf(url, title) {
       if (!res.ok || !ct.includes('pdf')) {
         let msg = 'This PDF couldn\'t be displayed in the app.';
         try { const j = await res.json(); if (j.message) msg = j.message; } catch(e){}
+        // Proxied papers usually fail in-app because the proxy needs a browser
+        // login session the app's server doesn't have — make the fallback clear.
+        if (isProxied) {
+          msg = 'This paper needs your library login, which only works in a browser. '
+              + 'Click below to open it through your institution.';
+        }
         showPdfError(msg, url);
         return null;
       }
@@ -3852,9 +4151,160 @@ async function openSettings() {
       }
     }
   } catch(e) { /* if it fails, fields just show normal placeholders */ }
+  // Sync proxies from the server, then rebuild the merged list (predefined +
+  // saved) so UniTN/ASUIT/FBK always show and saved URLs land in their slots.
+  try {
+    const s = await (await fetch('/settings')).json();
+    if (Array.isArray(s.institution_proxies)) savedProxies = s.institution_proxies;
+    if (typeof s.active_proxy === 'number') activeProxy = s.active_proxy;
+    institutionProxies = buildInstitutions();
+  } catch(e) {}
+  renderProxyRows();
 }
 function closeSettings() {
   document.getElementById('settingsOverlay').classList.remove('open');
+}
+
+// ── Institutional proxy management ──────────────────────────────────────────
+function renderProxyRows() {
+  const wrap = document.getElementById('proxyList');
+  if (!wrap) return;
+  wrap.innerHTML = institutionProxies.map((p, i) => {
+    const hasUrl = !!(p.url && p.url.trim());
+    const status = hasUrl
+      ? `<span class="proxy-status set">✓ ready</span>`
+      : `<span class="proxy-status unset">needs setup</span>`;
+    const delBtn = p.predefined ? ''
+      : `<button class="proxy-del" onclick="deleteCustomInstitution(${i})" title="Remove">✕</button>`;
+    return `
+      <div class="proxy-row ${i === activeProxy ? 'active' : ''}">
+        <input type="radio" name="proxyActive" class="proxy-active" ${i === activeProxy ? 'checked' : ''}
+               ${hasUrl ? '' : 'disabled'} onchange="pickActiveInSettings(${i})"
+               title="${hasUrl ? 'Use this institution' : 'Add a proxy URL first'}">
+        <span class="proxy-name">${escHtml(p.label)}</span>
+        ${status}
+        <button class="proxy-edit" onclick="openProxyEditor(${i})">${hasUrl ? 'Edit' : 'Set up'}</button>
+        ${delBtn}
+      </div>`;
+  }).join('');
+}
+
+function pickActiveInSettings(i) {
+  activeProxy = i;
+  renderProxyRows();
+}
+
+function deleteCustomInstitution(i) {
+  institutionProxies.splice(i, 1);
+  if (activeProxy >= institutionProxies.length) activeProxy = Math.max(-1, institutionProxies.length - 1);
+  renderProxyRows();
+  renderProxyPicker();
+}
+
+// ── Add/edit institution popup ──────────────────────────────────────────────
+let editingProxyIndex = null;   // index being edited, or null for "add new"
+
+function openProxyEditor(i) {
+  editingProxyIndex = (typeof i === 'number') ? i : null;
+  const isEdit = editingProxyIndex !== null;
+  const inst = isEdit ? institutionProxies[editingProxyIndex] : null;
+  document.getElementById('proxyEditorTitle').textContent =
+    isEdit ? `Set up ${inst.label}` : 'Add an institution';
+  const labelField = document.getElementById('proxyEditorLabelField');
+  const labelInput = document.getElementById('proxyEditorLabel');
+  // Predefined institutions have a fixed name; hide the label field for them
+  if (isEdit && inst.predefined) {
+    labelField.style.display = 'none';
+  } else {
+    labelField.style.display = '';
+    labelInput.value = isEdit ? (inst.label || '') : '';
+  }
+  document.getElementById('proxyEditorUrl').value = isEdit ? (inst.url || '') : '';
+  document.getElementById('proxyEditorOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('proxyEditorUrl').focus(), 50);
+}
+
+function closeProxyEditor() {
+  document.getElementById('proxyEditorOverlay').classList.remove('open');
+  editingProxyIndex = null;
+}
+
+function saveProxyEditor() {
+  const url = document.getElementById('proxyEditorUrl').value.trim();
+  const labelInput = document.getElementById('proxyEditorLabel');
+  if (editingProxyIndex !== null) {
+    // Editing an existing institution
+    institutionProxies[editingProxyIndex].url = url;
+    if (!institutionProxies[editingProxyIndex].predefined) {
+      institutionProxies[editingProxyIndex].label = labelInput.value.trim() || 'Institution';
+    }
+    // If it now has a URL and nothing is active yet, make it active
+    if (url && activeProxy === -1) activeProxy = editingProxyIndex;
+  } else {
+    // Adding a new custom institution
+    if (!url) { closeProxyEditor(); return; }
+    institutionProxies.push({id: null, label: labelInput.value.trim() || 'Institution', url: url, predefined: false});
+    if (activeProxy === -1) activeProxy = institutionProxies.length - 1;
+  }
+  closeProxyEditor();
+  renderProxyRows();
+  renderProxyPicker();
+}
+
+// The compact picker beside the search bar. Hidden when no proxies exist.
+function renderProxyPicker() {
+  const sel = document.getElementById('proxyPicker');
+  if (!sel) return;
+  if (!institutionProxies.length) {
+    sel.style.display = 'none';
+    return;
+  }
+  sel.style.display = '';
+  const opts = institutionProxies.map((p, i) =>
+    `<option value="${i}" ${i === activeProxy ? 'selected' : ''}>📚 ${escHtml(p.label || 'Library')}</option>`
+  ).join('');
+  sel.innerHTML = opts + `<option value="-1" ${activeProxy === -1 ? 'selected' : ''}>No library</option>`;
+}
+
+function onProxyPick(val) {
+  activeProxy = parseInt(val, 10);
+  // Persist the choice
+  fetch('/proxy/active', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({index: activeProxy})
+  }).catch(() => {});
+  // Re-render visible result cards so DOI links use the new proxy
+  rerenderVisibleCards();
+}
+
+// Re-render the currently-displayed article cards in place (e.g. after the
+// active proxy changes, so DOI links point at the right library).
+function rerenderVisibleCards() {
+  document.querySelectorAll('.article-card').forEach(card => {
+    const idx = parseInt((card.id || '').replace('card_', ''), 10);
+    const a = allArticles[idx];
+    if (!a) return;
+    const fresh = makeCard(a);
+    fresh.id = card.id;
+    card.replaceWith(fresh);
+  });
+}
+
+// Diagnostic: trace the open-access lookup for a DOI and show the raw result.
+// Uses a relative URL, so it works regardless of which port the app is on.
+async function runOaDiagnostic() {
+  const doi = document.getElementById('diagDoi').value.trim();
+  const out = document.getElementById('diagOutput');
+  out.style.display = 'block';
+  if (!doi) { out.textContent = 'Enter a DOI first.'; return; }
+  out.textContent = 'Looking up…';
+  try {
+    const res = await fetch('/debug/oa?doi=' + encodeURIComponent(doi));
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    out.textContent = 'Error: ' + e.message;
+  }
 }
 async function saveSettings() {
   const raw = {
@@ -3871,18 +4321,36 @@ async function saveSettings() {
   for (const [k, v] of Object.entries(raw)) {
     if (v) payload[k] = v;
   }
+  // Proxies: send the full list (drop empty rows) + the active index.
+  // Persist proxies that have a URL. Keep the `id` for predefined institutions
+  // so their URL rehydrates into the right slot on reload (and isn't duplicated
+  // as a custom entry). Custom institutions have id null.
+  const cleanProxies = institutionProxies
+    .filter(p => (p.url || '').trim())
+    .map(p => ({
+      ...(p.id ? {id: p.id} : {}),
+      label: (p.label || '').trim() || 'Institution',
+      url: (p.url || '').trim(),
+    }));
+  payload.institution_proxies = cleanProxies;
+  payload.active_proxy = activeProxy;
+
   await fetch('/settings', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload)
   });
+  // Reflect saved proxies locally (rebuild merged list) and refresh the picker
+  savedProxies = cleanProxies;
+  institutionProxies = buildInstitutions();
+  renderProxyPicker();
   // Refresh the Scopus/WoS badges to reflect any newly-added (or removed) keys
   try {
     const s = await (await fetch('/settings')).json();
     refreshDbKeyBadges(!!(s.scopus_api_key), !!(s.wos_api_key));
   } catch(e) {}
   closeSettings();
-  showToast('Settings saved — restart the app to apply API key changes.', 'green');
+  showToast('Settings saved.', 'green');
 }
 
 // ── History ────────────────────────────────────────────────────────────────

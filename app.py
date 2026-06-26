@@ -48,6 +48,13 @@ DEFAULTS = {
     # User preference: whether AI features are active (independent of key).
     # Lets users who don't want AI turn it off even with a key present.
     "ai_enabled":        True,
+    # Optional institutional proxy (EZProxy / OpenAthens). Paywalled-but-
+    # subscribed papers can be opened through the user's library login.
+    # institution_proxies: list of {"label","url"}; active_proxy: index into it.
+    # institution_proxy (legacy single string) is migrated into the list on load.
+    "institution_proxy": "",
+    "institution_proxies": [],
+    "active_proxy":     0,
     # Mirror priority order. sci-hub.se was DNS-blocked in Jan 2026, so the
     # currently-active mirrors come first. We pass the full list to the UI so
     # users can fall through to a backup if a mirror is unreachable.
@@ -70,6 +77,17 @@ def load_config():
             # Migrate any config that still has the dead-mirror-first order
             if cfg.get("scihub_mirrors") in _LEGACY_BROKEN_MIRRORS:
                 cfg["scihub_mirrors"] = list(DEFAULTS["scihub_mirrors"])
+                migrated = True
+            # Migrate a legacy single institution_proxy into the new list form.
+            # If it matches UniTN's known proxy, tag it with that id so it lands
+            # in the predefined UniTN slot instead of appearing as a custom dup.
+            legacy_proxy = (cfg.get("institution_proxy") or "").strip()
+            if legacy_proxy and not cfg.get("institution_proxies"):
+                if "biblio.unitn.it" in legacy_proxy:
+                    cfg["institution_proxies"] = [{"id": "unitn", "label": "UniTN", "url": legacy_proxy}]
+                else:
+                    cfg["institution_proxies"] = [{"label": "My institution", "url": legacy_proxy}]
+                cfg["active_proxy"] = 0
                 migrated = True
         except Exception: pass
     for k, e in {"anthropic_api_key":"ANTHROPIC_API_KEY","pubmed_api_key":"NCBI_API_KEY",
@@ -160,7 +178,7 @@ def get_quartile(j):
 
 def http_get(url, headers=None, timeout=TIMEOUT):
     req = urllib.request.Request(url, headers=headers or {
-        "User-Agent": "MedSearch/4.0 (academic research; Riccardo Nevoso)"})
+        "User-Agent": "MedSearch/1.0 (academic literature search)"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.read().decode("utf-8", errors="replace"), r.status
@@ -193,13 +211,91 @@ def register(seen, doi, title):
 #  ACCESS RESOLUTION
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _best_oa_url(locations):
+    """
+    Given a list of Unpaywall oa_location dicts, pick the URL most likely to
+    actually fetch as a PDF. Publisher copies (Elsevier, Wiley, Springer...)
+    frequently 403 a server-side fetch even when the article is open-access,
+    whereas PubMed Central and other repositories serve PDFs reliably. So we
+    rank: PMC/repository PDF > any direct PDF > repository landing > any URL.
+    """
+    if not locations:
+        return None
+    # Hosts that tend to block automated PDF fetches (deprioritize these)
+    blocky = ("sciencedirect", "elsevier", "wiley", "springer", "tandfonline",
+              "sagepub", "nature.com", "oup.com", "academic.oup", "cell.com",
+              "jamanetwork", "nejm.org", "thelancet")
+    # Hosts that serve PDFs reliably (prioritize these)
+    friendly = ("ncbi.nlm.nih.gov", "europepmc", "pmc", "arxiv", "biorxiv",
+                "medrxiv", "ssrn", "researchgate-not", "osf.io", "zenodo",
+                "doaj", "plos", "frontiersin", "mdpi", "hindawi", "biomedcentral",
+                ".edu", "repository", "repec")
+
+    def host_of(u):
+        try: return (urllib.parse.urlparse(u).hostname or "").lower()
+        except Exception: return ""
+
+    def score(loc):
+        pdf = loc.get("url_for_pdf")
+        url = loc.get("url")
+        target = pdf or url
+        if not target:
+            return (-999, None)
+        h = host_of(target)
+        s = 0
+        if pdf: s += 10                                  # direct PDF beats landing
+        if any(f in h for f in friendly): s += 20        # reliable host
+        if any(b in h for b in blocky):   s -= 15        # likely to 403
+        if loc.get("host_type") == "repository": s += 5  # repos > publishers
+        if loc.get("version") == "publishedVersion": s += 1
+        return (s, target)
+
+    ranked = sorted((score(l) for l in locations), key=lambda t: t[0], reverse=True)
+    for s, target in ranked:
+        if target:
+            return target
+    return None
+
 def check_oa(doi):
-    if not doi: return None
-    email = CONFIG.get("unpaywall_email") or "research@example.com"
-    data, _ = fetch_json(f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={email}")
-    if data and data.get("is_oa"):
-        loc = data.get("best_oa_location") or {}
-        return loc.get("url_for_pdf") or loc.get("url")
+    """
+    Find a free full-text URL for a DOI. Tries Unpaywall first (preferring an OA
+    copy that will actually fetch — PMC/repository over publisher, which often
+    403s); falls back to OpenAlex when Unpaywall can't answer. Returns URL or None.
+    """
+    if not doi:
+        return None
+    # ── Unpaywall ──────────────────────────────────────────────────────────
+    email = (CONFIG.get("unpaywall_email") or "").strip()
+    unpaywall_answered = False
+    if email:
+        data, status = fetch_json(
+            f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={urllib.parse.quote(email)}")
+        if data is not None and status == 200:
+            unpaywall_answered = True
+            if data.get("is_oa"):
+                # Consider ALL oa locations, not just best_oa_location, so we can
+                # pick a repository/PMC copy that fetches without a 403.
+                locs = data.get("oa_locations") or []
+                if not locs and data.get("best_oa_location"):
+                    locs = [data["best_oa_location"]]
+                u = _best_oa_url(locs)
+                if u:
+                    return u
+    # ── OpenAlex fallback ──────────────────────────────────────────────────
+    if not unpaywall_answered:
+        data2, _ = fetch_json(f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi)}")
+        if data2:
+            oa = data2.get("open_access") or {}
+            if oa.get("oa_url"):
+                return oa["oa_url"]
+            best = data2.get("best_oa_location") or {}
+            if best.get("pdf_url"):
+                return best["pdf_url"]
+            if best.get("landing_page_url"):
+                return best["landing_page_url"]
+            for loc in (data2.get("locations") or []):
+                if loc.get("is_oa") and loc.get("pdf_url"):
+                    return loc["pdf_url"]
     return None
 
 def resolve_access(doi):
@@ -1060,7 +1156,9 @@ def index():
                            show_onboarding=not CONFIG.get("onboarding_seen", False),
                            app_version=get_local_version(),
                            has_scopus=bool((CONFIG.get("scopus_api_key","") or "").strip()),
-                           has_wos=bool((CONFIG.get("wos_api_key","") or "").strip()))
+                           has_wos=bool((CONFIG.get("wos_api_key","") or "").strip()),
+                           institution_proxies=CONFIG.get("institution_proxies", []),
+                           active_proxy=CONFIG.get("active_proxy", 0))
 
 @app.route("/ai/toggle", methods=["POST"])
 def ai_toggle():
@@ -1069,6 +1167,22 @@ def ai_toggle():
     CONFIG["ai_enabled"] = bool(data.get("enabled", True))
     save_config(CONFIG)
     return jsonify({"ok": True, "ai_enabled": CONFIG["ai_enabled"]})
+
+@app.route("/proxy/active", methods=["POST"])
+def set_active_proxy():
+    """
+    Set which institution is active (persisted). The index refers to the
+    frontend's merged list (predefined UniTN/ASUIT/FBK first, then customs),
+    which buildInstitutions() reconstructs deterministically, so we just store
+    the integer. -1 means "no library / don't proxy".
+    """
+    data = request.json or {}
+    try:
+        CONFIG["active_proxy"] = int(data.get("index", 0))
+    except Exception:
+        CONFIG["active_proxy"] = 0
+    save_config(CONFIG)
+    return jsonify({"ok": True, "active_proxy": CONFIG["active_proxy"]})
 
 @app.route("/onboarding/dismiss", methods=["POST"])
 def onboarding_dismiss():
@@ -1565,13 +1679,33 @@ def pdf_proxy():
     if not url or not url.lower().startswith(("http://","https://")):
         return jsonify({"error":"Invalid URL"}), 400
 
-    # Light safety: only proxy if this URL is among the current session's
+    # Light safety: only proxy if this URL relates to the current session's
     # known access links (prevents the proxy being used as an open relay).
+    # We also accept institutional-proxy *variants* of those known URLs, since
+    # the DOI button may rewrite the host (ezp.biblio.unitn.it) or wrap it as
+    # ?url=<encoded>. We match by checking whether a known DOI/host appears.
     known = set()
+    known_dois = set()
     for a in SESSION.get("articles", []):
         if a.get("access_link"): known.add(a["access_link"])
         for m in (a.get("scihub") or []): known.add(m)
-    if url not in known:
+        if a.get("doi"): known_dois.add(str(a["doi"]).lower())
+
+    def _is_allowed(u):
+        if u in known:
+            return True
+        low = urllib.parse.unquote(u).lower()
+        # Proxied form embeds the original DOI somewhere in the URL
+        for d in known_dois:
+            if d and d in low:
+                return True
+        # Proxied ?url= form embeds a known access link
+        for k in known:
+            if k and k.lower() in low:
+                return True
+        return False
+
+    if not _is_allowed(url):
         return jsonify({"error":"URL not recognized from current results"}), 403
 
     try:
@@ -1675,6 +1809,60 @@ def export_zotero():
     ok, msg = zotero_save(articles)
     return jsonify({"ok": ok, "available": True, "message": msg})
 
+@app.route("/debug/oa")
+def debug_oa():
+    """
+    Diagnostic: trace the open-access lookup for a single DOI so we can see
+    exactly what Unpaywall and OpenAlex return. Usage: /debug/oa?doi=10.xxxx/yyyy
+    """
+    doi = request.args.get("doi","").strip()
+    # tolerate users pasting a full URL
+    for pre in ("https://doi.org/", "http://doi.org/", "doi.org/", "https://dx.doi.org/"):
+        if doi.lower().startswith(pre):
+            doi = doi[len(pre):]
+    if not doi:
+        return jsonify({"error":"pass ?doi=10.xxxx/yyyy"}), 400
+
+    out = {"doi": doi, "email_configured": bool((CONFIG.get("unpaywall_email") or "").strip())}
+
+    # Unpaywall
+    email = (CONFIG.get("unpaywall_email") or "").strip()
+    if email:
+        uw_url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={urllib.parse.quote(email)}"
+        body, status = http_get(uw_url)
+        out["unpaywall"] = {"http_status": status,
+                            "raw_first_300": (body or "")[:300]}
+        try:
+            d = json.loads(body) if body else None
+            if d:
+                out["unpaywall"]["is_oa"] = d.get("is_oa")
+                loc = d.get("best_oa_location") or {}
+                out["unpaywall"]["best_oa_location"] = {
+                    "url_for_pdf": loc.get("url_for_pdf"),
+                    "url": loc.get("url"),
+                } if loc else None
+        except Exception as e:
+            out["unpaywall"]["parse_error"] = str(e)
+    else:
+        out["unpaywall"] = "skipped (no email configured)"
+
+    # OpenAlex
+    oa_url = f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi)}"
+    body2, status2 = http_get(oa_url)
+    out["openalex"] = {"http_status": status2}
+    try:
+        d2 = json.loads(body2) if body2 else None
+        if d2:
+            out["openalex"]["oa_url"] = (d2.get("open_access") or {}).get("oa_url")
+            out["openalex"]["is_oa"] = (d2.get("open_access") or {}).get("is_oa")
+    except Exception as e:
+        out["openalex"]["parse_error"] = str(e)
+
+    # Final decision
+    out["check_oa_result"] = check_oa(doi)
+    out["scihub_links"] = scihub_links(doi)
+    return jsonify(out)
+
 @app.route("/settings", methods=["GET","POST"])
 def settings():
     global CONFIG
@@ -1683,20 +1871,47 @@ def settings():
         for k in ("anthropic_api_key","pubmed_api_key","scopus_api_key",
                   "scopus_insttoken","wos_api_key","unpaywall_email"):
             if k in data and data[k]: CONFIG[k] = data[k].strip()
+        # Institutional proxies: list of {label, url}; active index.
+        if "institution_proxies" in data and isinstance(data["institution_proxies"], list):
+            cleaned = []
+            for p in data["institution_proxies"]:
+                if not isinstance(p, dict):
+                    continue
+                url = (p.get("url") or "").strip()
+                label = (p.get("label") or "").strip() or "Institution"
+                if url:
+                    entry = {"label": label, "url": url}
+                    # Preserve the stable id for predefined institutions so the
+                    # URL rehydrates into the right slot (UniTN/ASUIT/FBK) on load.
+                    if p.get("id"):
+                        entry["id"] = str(p["id"])
+                    cleaned.append(entry)
+            CONFIG["institution_proxies"] = cleaned
+            # keep the legacy single field in sync with the first entry
+            CONFIG["institution_proxy"] = cleaned[0]["url"] if cleaned else ""
+        if "active_proxy" in data:
+            try:
+                # -1 is a valid value meaning "no library / don't proxy"
+                CONFIG["active_proxy"] = int(data["active_proxy"])
+            except Exception:
+                CONFIG["active_proxy"] = 0
         save_config(CONFIG)
         return jsonify({"ok": True})
-    # Mask API keys (show only last 4 chars); the email isn't sensitive so
-    # return it in full so the user can see and verify it.
+    # Mask API keys (show only last 4 chars). Email and proxy URL aren't
+    # sensitive, so return them in full so the user can see and verify them.
     safe = {}
     for k, v in CONFIG.items():
         if not isinstance(v, str):
             continue
-        if k == "unpaywall_email":
+        if k in ("unpaywall_email", "institution_proxy"):
             safe[k] = v
         elif len(v) > 4:
             safe[k] = "*"*(len(v)-4) + v[-4:]
         else:
             safe[k] = "set" if v else ""
+    # Non-string settings the UI needs back in full
+    safe["institution_proxies"] = CONFIG.get("institution_proxies", [])
+    safe["active_proxy"] = CONFIG.get("active_proxy", 0)
     return jsonify(safe)
 
 @app.route("/history")
