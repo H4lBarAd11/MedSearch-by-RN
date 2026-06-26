@@ -1809,60 +1809,6 @@ def export_zotero():
     ok, msg = zotero_save(articles)
     return jsonify({"ok": ok, "available": True, "message": msg})
 
-@app.route("/debug/oa")
-def debug_oa():
-    """
-    Diagnostic: trace the open-access lookup for a single DOI so we can see
-    exactly what Unpaywall and OpenAlex return. Usage: /debug/oa?doi=10.xxxx/yyyy
-    """
-    doi = request.args.get("doi","").strip()
-    # tolerate users pasting a full URL
-    for pre in ("https://doi.org/", "http://doi.org/", "doi.org/", "https://dx.doi.org/"):
-        if doi.lower().startswith(pre):
-            doi = doi[len(pre):]
-    if not doi:
-        return jsonify({"error":"pass ?doi=10.xxxx/yyyy"}), 400
-
-    out = {"doi": doi, "email_configured": bool((CONFIG.get("unpaywall_email") or "").strip())}
-
-    # Unpaywall
-    email = (CONFIG.get("unpaywall_email") or "").strip()
-    if email:
-        uw_url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={urllib.parse.quote(email)}"
-        body, status = http_get(uw_url)
-        out["unpaywall"] = {"http_status": status,
-                            "raw_first_300": (body or "")[:300]}
-        try:
-            d = json.loads(body) if body else None
-            if d:
-                out["unpaywall"]["is_oa"] = d.get("is_oa")
-                loc = d.get("best_oa_location") or {}
-                out["unpaywall"]["best_oa_location"] = {
-                    "url_for_pdf": loc.get("url_for_pdf"),
-                    "url": loc.get("url"),
-                } if loc else None
-        except Exception as e:
-            out["unpaywall"]["parse_error"] = str(e)
-    else:
-        out["unpaywall"] = "skipped (no email configured)"
-
-    # OpenAlex
-    oa_url = f"https://api.openalex.org/works/doi:{urllib.parse.quote(doi)}"
-    body2, status2 = http_get(oa_url)
-    out["openalex"] = {"http_status": status2}
-    try:
-        d2 = json.loads(body2) if body2 else None
-        if d2:
-            out["openalex"]["oa_url"] = (d2.get("open_access") or {}).get("oa_url")
-            out["openalex"]["is_oa"] = (d2.get("open_access") or {}).get("is_oa")
-    except Exception as e:
-        out["openalex"]["parse_error"] = str(e)
-
-    # Final decision
-    out["check_oa_result"] = check_oa(doi)
-    out["scihub_links"] = scihub_links(doi)
-    return jsonify(out)
-
 @app.route("/settings", methods=["GET","POST"])
 def settings():
     global CONFIG
@@ -2002,6 +1948,28 @@ if __name__ == "__main__":
     # Try to open a native window via pywebview; fall back to a browser tab.
     try:
         import webview  # pywebview
+
+        # JS-callable API: lets the page open a real in-app browser window for
+        # any URL the server can't fetch directly (publisher pages, paywalled
+        # PDFs via the library proxy, JS-rendered viewers). This window is a
+        # full browser — it runs JavaScript and carries the user's login
+        # session/cookies, so institutional access and paywalls just work.
+        class Api:
+            def open_external(self, url, title=None):
+                try:
+                    if not url or not str(url).lower().startswith(("http://", "https://")):
+                        return {"ok": False, "error": "bad url"}
+                    webview.create_window(
+                        title or "MedSearch — Article",
+                        url,
+                        width=1100, height=860,
+                        min_size=(800, 600),
+                    )
+                    return {"ok": True}
+                except Exception as e:
+                    return {"ok": False, "error": str(e)}
+
+        api = Api()
         # Start Flask in a background thread
         t = threading.Thread(target=run_server, daemon=True)
         t.start()
@@ -2011,6 +1979,7 @@ if __name__ == "__main__":
             URL,
             width=1280, height=860,
             min_size=(940, 640),
+            js_api=api,
         )
         webview.start()   # blocks until window closed; then process exits cleanly
     except ImportError:
