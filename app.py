@@ -791,6 +791,10 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
         doi  = next((a.text for a in art.findall(".//ArticleId") if a.get("IdType")=="doi"), None)
         pmid_el = art.find(".//MedlineCitation/PMID")
         pmid = pmid_el.text if pmid_el is not None else None
+        # PMC ID (when present) means the full text is free in PubMed Central —
+        # we can build a direct PDF link, which is more complete/readable than
+        # the publisher's page and saves the user a hop.
+        pmcid = next((a.text for a in art.findall(".//ArticleId") if a.get("IdType")=="pmc"), None)
 
         # Abstract may have multiple labelled sections — join them all
         abs_parts = art_el.findall(".//Abstract/AbstractText")
@@ -807,6 +811,14 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
         kind, link = resolve_access(doi)
+        # If PubMed Central has the full text, prefer its direct PDF over a
+        # publisher page (the PMC copy is open and renders in the in-app viewer).
+        if pmcid:
+            pmcid_clean = pmcid.strip()
+            if not pmcid_clean.upper().startswith("PMC"):
+                pmcid_clean = "PMC" + pmcid_clean
+            kind = "open"
+            link = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmcid_clean}/pdf/"
         scihub = scihub_links(doi)
         results.append({"title":title,"authors":authors,"year":year,"journal":journal,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":pmid,
@@ -1807,6 +1819,23 @@ def export_zotero():
         return jsonify({"ok": False, "available": False,
                         "message": "Zotero isn't running. Open the Zotero desktop app and try again."}), 200
     ok, msg = zotero_save(articles)
+    return jsonify({"ok": ok, "available": True, "message": msg})
+
+@app.route("/export/zotero/single", methods=["POST"])
+def export_zotero_single():
+    """Send one article (by its session index) straight to Zotero."""
+    data = request.json or {}
+    try:
+        idx = int(data.get("idx", -1))
+    except Exception:
+        idx = -1
+    articles = SESSION.get("articles", [])
+    if idx < 0 or idx >= len(articles) or articles[idx] is None:
+        return jsonify({"ok": False, "message": "Article not found."}), 200
+    if not zotero_ping():
+        return jsonify({"ok": False, "available": False,
+                        "message": "Zotero isn't running. Open the Zotero desktop app and try again."}), 200
+    ok, msg = zotero_save([articles[idx]])
     return jsonify({"ok": ok, "available": True, "message": msg})
 
 @app.route("/settings", methods=["GET","POST"])

@@ -905,6 +905,13 @@
     border: 1px solid var(--purple-tint2);
   }
   .link-btn.explain-btn:hover { background: var(--purple-tint2); }
+  .link-btn.zotero-btn {
+    background: var(--bg3);
+    color: var(--text2);
+    border: 1px solid var(--border2);
+  }
+  .link-btn.zotero-btn:hover { background: var(--bg4); color: var(--text); }
+  .link-btn.zotero-btn:disabled { opacity: 0.6; cursor: default; }
   .link-btn.push-right { margin-left: auto; }
 
   .expand-btn {
@@ -1130,35 +1137,6 @@
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
   }
-  .pdf-error {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    padding: 30px;
-    text-align: center;
-    color: var(--text2);
-    font-size: 0.85rem;
-    line-height: 1.5;
-  }
-  .pdf-error .pdf-error-icon { font-size: 2rem; }
-  .pdf-error a { color: var(--accent); }
-  .pdf-error-btn {
-    margin-top: 6px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius);
-    padding: 8px 16px;
-    font-size: 0.82rem;
-    font-family: var(--font);
-    cursor: pointer;
-    transition: background var(--transition);
-  }
-  .pdf-error-btn:hover { background: var(--accent2); }
   .modal {
     background: var(--bg2);
     border: 1px solid var(--border2);
@@ -2771,6 +2749,8 @@ function currentProxyUrl() {
 // normal new tab when not running under PyWebView (browser-tab mode).
 function openInAppBrowser(url, title) {
   if (!url) return;
+  // The PDF viewer is pointless once we hand off to the browser — close it.
+  closePdf();
   try {
     if (window.pywebview && window.pywebview.api && window.pywebview.api.open_external) {
       window.pywebview.api.open_external(url, title || 'MedSearch — Article');
@@ -3368,6 +3348,8 @@ function makeCard(a) {
     : '';
   // when there's no cite button, explain takes the right-push
   const explainBtn = `<button class="link-btn explain-btn${a.doi ? '' : ' push-right'}" onclick="openExplain(${a._idx})">✦ Explain</button>`;
+  // Send this one article straight to Zotero (if the desktop app is running)
+  const zoteroBtn = `<button class="link-btn zotero-btn" onclick="sendSingleToZotero(${a._idx}, event)" title="Send to Zotero">⤓ Zotero</button>`;
 
   const abstract = a.abstract || '';
   const oneliner = a.oneliner
@@ -3386,7 +3368,7 @@ function makeCard(a) {
       <div class="article-abstract" id="abs_${a._idx}">${escHtml(abstract)}</div>
       <button class="expand-btn" id="expbtn_${a._idx}"
         onclick="toggleAbstract(${a._idx})">Show more ▾</button>` : ''}
-    <div class="article-links">${links} ${citeBtn} ${explainBtn}</div>`;
+    <div class="article-links">${links} ${citeBtn} ${explainBtn} ${zoteroBtn}</div>`;
   return card;
 }
 
@@ -3750,9 +3732,10 @@ function openPdf(url, title) {
 
   overlay.classList.add('open');
 
-  // Guard: PDF.js must have loaded (needs internet on first run)
+  // Guard: PDF.js must have loaded (needs internet on first run). If not,
+  // open the article in the browser instead of dead-ending.
   if (!window.pdfjsLib) {
-    showPdfError('The PDF viewer could not load (no internet on first run?). Use the button below to read it in the built-in browser.', url, title);
+    openInAppBrowser(url, title);
     return;
   }
 
@@ -3762,9 +3745,10 @@ function openPdf(url, title) {
     .then(async res => {
       const ct = res.headers.get('Content-Type') || '';
       if (!res.ok || !ct.includes('pdf')) {
-        let msg = 'This PDF couldn\'t be displayed directly.';
-        try { const j = await res.json(); if (j.message) msg = j.message; } catch(e){}
-        showPdfError(msg, url, title);
+        // The server couldn't return a direct PDF (paywall, login-gated, or a
+        // JS-rendered page). The browser is the only way to read it, so go
+        // straight there and close this viewer — no dead-end prompt.
+        openInAppBrowser(url, title);
         return null;
       }
       return res.arrayBuffer();
@@ -3782,10 +3766,11 @@ function openPdf(url, title) {
         pdfScale = pdfFitScale;
         await renderAllPages();
       } catch(e) {
-        showPdfError('Could not render this PDF: ' + e.message, url, title);
+        // Couldn't render the bytes as a PDF — fall through to the browser.
+        openInAppBrowser(url, title);
       }
     })
-    .catch(e => showPdfError('Could not load the PDF: ' + e.message, url, title));
+    .catch(e => openInAppBrowser(url, title));
 }
 
 // Save the currently-open PDF to disk (opens the browser's save dialog)
@@ -3863,24 +3848,6 @@ async function pdfFitWidth() {
   pdfScale = pdfFitScale;
   updateZoomLabel();
   renderAllPages();
-}
-
-function showPdfError(message, url, title) {
-  const loading = document.getElementById('pdfLoading');
-  const container = document.getElementById('pdfCanvasContainer');
-  loading.style.display = 'none';
-  container.style.display = 'none';
-  const body = document.getElementById('pdfBody');
-  const old = document.getElementById('pdfErrorPanel');
-  if (old) old.remove();
-  const err = document.createElement('div');
-  err.className = 'pdf-error';
-  err.id = 'pdfErrorPanel';
-  err.innerHTML = `
-    <div class="pdf-error-icon">📄</div>
-    <div>${escHtml(message)}</div>
-    <button class="pdf-error-btn" onclick="openInAppBrowser('${escAttr(url)}', '${escAttr(title || 'Article')}')">↗ Read in built-in browser</button>`;
-  body.appendChild(err);
 }
 
 function closePdf() {
@@ -4074,6 +4041,31 @@ async function sendToZotero() {
   } catch(e) {
     btn.textContent = 'Send to Zotero';
     btn.disabled = false;
+    showToast('Zotero send failed: ' + e.message, 'red');
+  }
+}
+
+// Send a single article (by index) to Zotero from its card button
+async function sendSingleToZotero(idx, ev) {
+  const btn = ev && ev.currentTarget ? ev.currentTarget : null;
+  if (btn) { btn.disabled = true; btn.textContent = '⤓ Sending…'; }
+  try {
+    const res = await fetch('/export/zotero/single', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({idx})
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (btn) btn.textContent = '✓ Sent';
+      showToast('Sent to Zotero!', 'green');
+      if (btn) setTimeout(() => { btn.textContent = '⤓ Zotero'; btn.disabled = false; }, 2500);
+    } else {
+      if (btn) { btn.textContent = '⤓ Zotero'; btn.disabled = false; }
+      showToast(data.message || 'Could not send to Zotero.', 'red');
+    }
+  } catch(e) {
+    if (btn) { btn.textContent = '⤓ Zotero'; btn.disabled = false; }
     showToast('Zotero send failed: ' + e.message, 'red');
   }
 }
