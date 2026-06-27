@@ -14,13 +14,24 @@ from datetime import datetime
 from pathlib import Path
 from flask import Flask, render_template, request, Response, jsonify, stream_with_context
 
-# ── resolve paths so app.py works both as a script and as a frozen build ─────
-# When bundled by PyInstaller, data files (templates/, VERSION) are unpacked to
-# a temp dir exposed as sys._MEIPASS; when run from source they sit next to this
-# file. RESOURCE_DIR points at whichever holds the bundled assets.
+# ── resolve paths so app.py works as a script AND as a frozen build ──────────
+# Two freezing tools put bundled data files (templates/, VERSION) in different
+# places:
+#   • PyInstaller → a temp dir exposed as sys._MEIPASS
+#   • py2app      → <Bundle>.app/Contents/Resources (sys.executable is in
+#                   Contents/MacOS, so Resources is ../Resources)
+# When run from source they sit next to this file. RESOURCE_DIR points at
+# whichever actually holds the assets.
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    RESOURCE_DIR = Path(sys._MEIPASS)            # bundled assets (templates, VERSION)
-    APP_DIR_PATH = Path(sys.executable).parent.resolve()   # where the exe lives
+    # PyInstaller
+    RESOURCE_DIR = Path(sys._MEIPASS)
+    APP_DIR_PATH = Path(sys.executable).parent.resolve()
+elif getattr(sys, "frozen", False):
+    # py2app: resources live in Contents/Resources, beside Contents/MacOS
+    _exe_dir = Path(sys.executable).resolve().parent          # Contents/MacOS
+    _res = _exe_dir.parent / "Resources"                       # Contents/Resources
+    RESOURCE_DIR = _res if (_res / "templates").exists() else _exe_dir
+    APP_DIR_PATH = _exe_dir
 else:
     RESOURCE_DIR = Path(__file__).parent.resolve()
     APP_DIR_PATH = RESOURCE_DIR
@@ -829,7 +840,8 @@ def build_pubmed_term(query, strict=True):
     return " AND ".join(f"{w}[tiab]" for w in words)
 
 def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
-                  extra_filter=None, source_label="PubMed", sort="relevance"):
+                  extra_filter=None, source_label="PubMed", sort="relevance",
+                  offset=0):
     results = []
     base = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
     kp   = f"&api_key={CONFIG['pubmed_api_key']}" if CONFIG.get("pubmed_api_key") else ""
@@ -841,7 +853,7 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
     # sort=relevance → PubMed "Best Match"; sort=date → most recent first
     sort_param = "date" if sort == "date" else "relevance"
     esearch = (f"{base}/esearch.fcgi?db=pubmed&term={urllib.parse.quote(term)}"
-               f"&retmax={max_r}&sort={sort_param}&retmode=json{kp}{dp}")
+               f"&retstart={offset}&retmax={max_r}&sort={sort_param}&retmode=json{kp}{dp}")
     data, _ = fetch_json(esearch)
     if not data: return results, 0
     ids   = data.get("esearchresult",{}).get("idlist",[])
@@ -927,7 +939,8 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
         time.sleep(0.12)
     return results, total
 
-def search_cochrane(query, max_r, y_from, y_to, seen, strict=True, sort="relevance"):
+def search_cochrane(query, max_r, y_from, y_to, seen, strict=True, sort="relevance",
+                    offset=0):
     """
     Cochrane systematic reviews are indexed in PubMed under the journal
     'Cochrane Database of Systematic Reviews'. We search PubMed restricted to
@@ -937,15 +950,15 @@ def search_cochrane(query, max_r, y_from, y_to, seen, strict=True, sort="relevan
     cochrane_filter = '"Cochrane Database Syst Rev"[ta]'
     res, total = search_pubmed(query, max_r, y_from, y_to, seen,
                                strict=strict, extra_filter=cochrane_filter,
-                               source_label="Cochrane", sort=sort)
+                               source_label="Cochrane", sort=sort, offset=offset)
     return res, total
 
-def search_arxiv(query, max_r, y_from, y_to, seen, sort="relevance"):
+def search_arxiv(query, max_r, y_from, y_to, seen, sort="relevance", offset=0):
     results = []
     # sortBy=relevance ↔ submittedDate (most recent first)
     sort_by = "submittedDate" if sort == "date" else "relevance"
     body, _ = http_get(f"https://export.arxiv.org/api/query?search_query=all:"
-                       f"{urllib.parse.quote(query)}&max_results={max_r}&sortBy={sort_by}&sortOrder=descending")
+                       f"{urllib.parse.quote(query)}&start={offset}&max_results={max_r}&sortBy={sort_by}&sortOrder=descending")
     if not body: return results
     ns   = {"a":"http://www.w3.org/2005/Atom"}
     root = ET.fromstring(body)
@@ -967,15 +980,20 @@ def search_arxiv(query, max_r, y_from, y_to, seen, sort="relevance"):
                         "scihub":None,"oneliner":None})
     return results
 
-def search_clinicaltrials(query, max_r, y_from, y_to, seen, sort="relevance"):
+def search_clinicaltrials(query, max_r, y_from, y_to, seen, sort="relevance", offset=0):
     results = []
     # ClinicalTrials v2: default ordering is relevance; LastUpdatePostDate:desc
     # gives most-recently-updated first.
     sort_p = "&sort=LastUpdatePostDate%3Adesc" if sort == "date" else ""
     data, _ = fetch_json(f"https://clinicaltrials.gov/api/v2/studies"
-                         f"?query.term={urllib.parse.quote(query)}&pageSize={max_r}&format=json{sort_p}")
+                         f"?query.term={urllib.parse.quote(query)}&pageSize={max_r + offset}&format=json{sort_p}")
     if not data: return results
-    for study in data.get("studies",[]):
+    # The v2 API paginates by opaque token, not numeric offset, so for "load
+    # more" we over-fetch (offset+max_r) and skip the first `offset` studies.
+    studies = data.get("studies", [])
+    if offset:
+        studies = studies[offset:]
+    for study in studies:
         proto  = study.get("protocolSection",{})
         id_mod = proto.get("identificationModule",{})
         sm     = proto.get("statusModule",{})
@@ -1005,7 +1023,7 @@ def search_clinicaltrials(query, max_r, y_from, y_to, seen, sort="relevance"):
 # endpoint (only date-range or DOI fetch), and the PMC-based workaround simply
 # duplicated PubMed results via dedup. arXiv stays (it has a real search API).
 
-def search_scopus(query, max_r, y_from, y_to, seen, sort="relevance"):
+def search_scopus(query, max_r, y_from, y_to, seen, sort="relevance", offset=0):
     results = []
     key = (CONFIG.get("scopus_api_key","") or "").strip()
     if not key:
@@ -1021,7 +1039,7 @@ def search_scopus(query, max_r, y_from, y_to, seen, sort="relevance"):
     # sort=relevancy ↔ -coverDate (minus prefix = descending → newest first)
     sort_p = "&sort=-coverDate" if sort == "date" else "&sort=relevancy"
     url = (f"https://api.elsevier.com/content/search/scopus"
-           f"?query={urllib.parse.quote(query+dr)}&count={max_r}{sort_p}")
+           f"?query={urllib.parse.quote(query+dr)}&start={offset}&count={max_r}{sort_p}")
     data, status = fetch_json(url, headers=headers)
     if status != 200:
         # Surface a clear, actionable error instead of failing silently
@@ -1063,16 +1081,18 @@ def search_scopus(query, max_r, y_from, y_to, seen, sort="relevance"):
         time.sleep(0.2)
     return results
 
-def search_wos(query, max_r, y_from, y_to, seen, sort="relevance"):
+def search_wos(query, max_r, y_from, y_to, seen, sort="relevance", offset=0):
     results = []
     key = (CONFIG.get("wos_api_key","") or "").strip()
     if not key:
         raise RuntimeError("No Web of Science API key set.")
     # WoS Starter sortField: RS = Relevance, PY+D = Publication Year descending
     sort_p = "&sortField=PY%2BD" if sort == "date" else "&sortField=RS"
+    # WoS paginates by 1-indexed page of size `limit`. Convert offset → page.
+    wos_page = (offset // max_r) + 1 if max_r else 1
     data, status = fetch_json(
         f"https://api.clarivate.com/apis/wos-starter/v1/documents"
-        f"?db=WOS&q={urllib.parse.quote(query)}&limit={max_r}&page=1{sort_p}",
+        f"?db=WOS&q={urllib.parse.quote(query)}&limit={max_r}&page={wos_page}{sort_p}",
         headers={"X-ApiKey":key})
     if status != 200:
         if status in (401, 403):
@@ -1481,6 +1501,7 @@ def search_stream():
     y_to    = int(data["year_to"])   if data.get("year_to")   else None
     strict  = data.get("strict", True)   # strict by default
     sort    = data.get("sort", "relevance")   # "relevance" (default) or "date"
+    offset  = int(data.get("offset", 0))      # >0 = "load more" (next batch)
     if sort not in ("relevance", "date"):
         sort = "relevance"
 
@@ -1488,11 +1509,13 @@ def search_stream():
         return Response("data: "+json.dumps({"type":"error","text":"Empty query"})+"\n\n",
                         mimetype="text/event-stream")
 
-    # Reset session up front
-    SESSION["articles"] = []
-    SESSION["query"]    = query
-    SESSION["last_synthesis"] = ""
-    if query not in SESSION["history"]: SESSION["history"].append(query)
+    # Fresh search resets the session; "load more" (offset>0) keeps existing
+    # results and appends to them.
+    if offset == 0:
+        SESSION["articles"] = []
+        SESSION["query"]    = query
+        SESSION["last_synthesis"] = ""
+        if query not in SESSION["history"]: SESSION["history"].append(query)
 
     # Ordered list of (key, label, callable) to run
     def make_runners(seen):
@@ -1501,7 +1524,7 @@ def search_stream():
         # here (before general PubMed) labels them as Cochrane in the dedup.
         if "cochrane" in sources or "all" in sources:
             runners.append(("cochrane", "Cochrane",
-                            lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
+                            lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict, sort=sort, offset=offset)))
         # Clinical practice guidelines: PubMed restricted to guideline publication
         # types. Captures national/society guidelines from many countries indexed
         # in PubMed (incl. Italy's SNLG, US, UK, etc.). Runs BEFORE plain PubMed so
@@ -1512,40 +1535,50 @@ def search_stream():
                             lambda: search_pubmed(
                                 query, max_r, y_from, y_to, seen, strict=strict, sort=sort,
                                 extra_filter="(Guideline[ptyp] OR \"Practice Guideline\"[ptyp])",
-                                source_label="Guidelines")))
+                                source_label="Guidelines", offset=offset)))
         if "pubmed" in sources or "all" in sources:
             runners.append(("pubmed", "PubMed",
-                            lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
+                            lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict, sort=sort, offset=offset)))
         if "scopus" in sources or "all" in sources:
             runners.append(("scopus", "Scopus",
-                            lambda: (search_scopus(query, max_r, y_from, y_to, seen, sort=sort), 0)))
+                            lambda: (search_scopus(query, max_r, y_from, y_to, seen, sort=sort, offset=offset), 0)))
         if "wos" in sources or "all" in sources:
             runners.append(("wos", "Web of Science",
-                            lambda: (search_wos(query, max_r, y_from, y_to, seen, sort=sort), 0)))
+                            lambda: (search_wos(query, max_r, y_from, y_to, seen, sort=sort, offset=offset), 0)))
         if "clinicaltrials" in sources or "all" in sources:
             runners.append(("clinicaltrials", "ClinicalTrials.gov",
-                            lambda: (search_clinicaltrials(query, max_r, y_from, y_to, seen, sort=sort), 0)))
+                            lambda: (search_clinicaltrials(query, max_r, y_from, y_to, seen, sort=sort, offset=offset), 0)))
         if "arxiv" in sources or "all" in sources:
             runners.append(("arxiv", "arXiv",
-                            lambda: (search_arxiv(query, max_r, y_from, y_to, seen, sort=sort), 0)))
+                            lambda: (search_arxiv(query, max_r, y_from, y_to, seen, sort=sort, offset=offset), 0)))
         return runners
 
     def generate():
         seen = make_dedup_set()
-        all_results = []
+        # For "load more", continue from existing results: rebuild the dedup set
+        # from what's already shown (so new results don't repeat them) and keep
+        # the running index/list going.
+        if offset > 0 and SESSION.get("articles"):
+            all_results = list(SESSION["articles"])
+            global_idx = len(all_results)
+            for a in all_results:
+                register(seen, a.get("doi"), a.get("title"))
+        else:
+            all_results = []
+            global_idx = 0
         ai_on = bool((CONFIG.get("anthropic_api_key","") or "").strip()) and CONFIG.get("ai_enabled", True)
 
         # Send an initial padding comment to defeat buffering in some webviews.
         yield ":" + (" " * 2048) + "\n\n"
 
-        # 1. MeSH first (fast, gives the user something immediately)
-        if "pubmed" in sources or "all" in sources:
+        # 1. MeSH first (fast, gives the user something immediately) — only on a
+        # fresh search, not when loading more.
+        if offset == 0 and ("pubmed" in sources or "all" in sources):
             mesh = get_mesh(query)
             yield "data: " + json.dumps({"type":"mesh","mesh":mesh}) + "\n\n"
 
         runners = make_runners(seen)
         total_sources = len(runners)
-        global_idx = 0   # running index assigned to each article
 
         # Each source: announce start → emit each article card immediately →
         # then stream one-liners as they finish (cards fill in live).

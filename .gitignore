@@ -29,3 +29,8 @@ medsearch_exports/
 build/
 dist/
 *.egg-info/
+
+# py2app build artifacts
+build/
+dist/
+*.egg-info/

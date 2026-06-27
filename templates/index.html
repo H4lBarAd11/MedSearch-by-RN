@@ -259,6 +259,25 @@
     margin-top: 6px;
   }
 
+  .load-more-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 18px 0 8px;
+  }
+  .load-more-btn {
+    background: var(--accent-tint);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent);
+    font-family: var(--font);
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 9px 22px;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+  }
+  .load-more-btn:hover { background: var(--accent); color: #fff; }
+
   /* History */
   .history-list {
     max-height: 140px;
@@ -3053,7 +3072,10 @@ if (_strictEl) {
 let searchAbortController = null;
 const erroredSources = new Set();   // sources that errored this search (don't clobber their message)
 
-function runSearch() {
+function runSearch(isLoadMore) {
+  // Defensive: if called as an event handler (e.g. btn.onclick = runSearch),
+  // the first arg is a MouseEvent. Only treat an explicit `true` as load-more.
+  isLoadMore = (isLoadMore === true);
   const query = document.getElementById('searchInput').value.trim();
   const dbs   = getSelectedDBs();
   if (!query) { showToast('Please enter a search query.', 'red'); return; }
@@ -3062,26 +3084,38 @@ function runSearch() {
 
   searchRunning = true;
   setSearchButtonStop(true);
-  allArticles = [];
-  erroredSources.clear();   // fresh error tracking per search
-  closeSynthesis();
-  resetAssistantSuggestions();   // refresh suggestions for the new search
+  if (!isLoadMore) {
+    allArticles = [];
+    erroredSources.clear();   // fresh error tracking per search
+    closeSynthesis();
+    resetAssistantSuggestions();   // refresh suggestions for the new search
+  }
 
   searchAbortController = new AbortController();
 
+  const perSource = parseInt(document.getElementById('maxResults').value) || 10;
   lastSearchParams = {
     query,
     sources:     dbs,
-    max_results: parseInt(document.getElementById('maxResults').value) || 10,
+    max_results: perSource,
     year_from:   document.getElementById('yearFrom').value || null,
     year_to:     document.getElementById('yearTo').value   || null,
     strict:      document.getElementById('strictToggle').checked,
     sort:        sortMode,
+    // "Load more" continues from however many results are already shown.
+    offset:      isLoadMore ? allArticles.filter(Boolean).length : 0,
   };
 
-  // Scaffold the results area with header + a live status line
-  scaffoldResults();
-  setStatus('searching', 'Searching…');
+  // Fresh search: rebuild the results area. Load-more: keep existing results,
+  // just remove the old "load more" button and show a small loading state.
+  if (!isLoadMore) {
+    scaffoldResults();
+    setStatus('searching', 'Searching…');
+  } else {
+    const oldBtn = document.getElementById('loadMoreWrap');
+    if (oldBtn) oldBtn.remove();
+    setStatus('searching', 'Finding more…');
+  }
 
   // POST then read the SSE stream from the response body
   fetch('/search_stream', {
@@ -3096,7 +3130,7 @@ function runSearch() {
 
     function pump() {
       return reader.read().then(({done, value}) => {
-        if (done) { finishSearch(query); return; }
+        if (done) { finishSearch(query, isLoadMore); return; }
         buffer += decoder.decode(value, {stream:true});
 
         // SSE events are separated by double newlines
@@ -3163,12 +3197,14 @@ function setSearchButtonStop(isStop) {
     btn.textContent = 'Stop';
     btn.classList.add('stop-btn');
     btn.disabled = false;
-    btn.onclick = stopSearch;
+    btn.onclick = () => stopSearch();
   } else {
     btn.textContent = 'Search';
     btn.classList.remove('stop-btn');
     btn.disabled = false;
-    btn.onclick = runSearch;
+    // Wrap so the click MouseEvent isn't passed as the isLoadMore argument
+    // (a bare `btn.onclick = runSearch` would make every click a "load more").
+    btn.onclick = () => runSearch();
   }
 }
 
@@ -3359,7 +3395,7 @@ function finalizeSourceGroup(source, count, errorText) {
   }
 }
 
-function finishSearch(query) {
+function finishSearch(query, isLoadMore) {
   searchRunning = false;
   setSearchButtonStop(false);
   searchAbortController = null;
@@ -3395,6 +3431,31 @@ function finishSearch(query) {
         <div class="empty-sub">Try different keywords or expand the date range.</div>
       </div>`;
   }
+
+  // "Find more" button. We hide it when a load-more pass added nothing new
+  // (sources exhausted), or when there are no results at all.
+  const addedSomething = !isLoadMore || (n > (window._countBeforeLoadMore || 0));
+  window._countBeforeLoadMore = n;   // remember for the next pass
+  if (n > 0 && addedSomething) {
+    const perSource = parseInt(document.getElementById('maxResults').value) || 10;
+    const groups = document.getElementById('sourceGroups');
+    const wrap = document.createElement('div');
+    wrap.id = 'loadMoreWrap';
+    wrap.className = 'load-more-wrap';
+    wrap.innerHTML =
+      `<button class="load-more-btn" onclick="runMoreResults()">Find ${perSource} more per source ↓</button>`;
+    groups.appendChild(wrap);
+  } else if (isLoadMore && n > 0) {
+    // Exhausted: let the user know there's nothing more.
+    showToast('No more results to load.', 'green');
+  }
+}
+
+// "Find more": re-run the same search, asking each source for the next batch,
+// appending the new (deduplicated) results below the current ones.
+function runMoreResults() {
+  window._countBeforeLoadMore = allArticles.filter(Boolean).length;
+  runSearch(true);
 }
 
 function sourceIcon(s) {
