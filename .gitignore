@@ -24,3 +24,8 @@ MedSearch.app/
 
 # User exports (created at runtime)
 medsearch_exports/
+
+# py2app build artifacts
+build/
+dist/
+*.egg-info/

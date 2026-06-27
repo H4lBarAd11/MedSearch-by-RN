@@ -55,6 +55,12 @@ DEFAULTS = {
     "institution_proxy": "",
     "institution_proxies": [],
     "active_proxy":     0,
+    # Selected national guideline body (country code, e.g. "it"). Used by the
+    # "National guidelines" button to open the right authority's search.
+    "guideline_country": "",
+    # Default source(s) for the menu-bar quick search. One of the source keys
+    # ("pubmed", "guidelines", "scopus", ...) or "all". Editable from either app.
+    "default_source": "pubmed",
     # Mirror priority order. sci-hub.se was DNS-blocked in Jan 2026, so the
     # currently-active mirrors come first. We pass the full list to the UI so
     # users can fall through to a backup if a mirror is unreachable.
@@ -111,6 +117,52 @@ CONFIG = load_config()
 
 TIMEOUT = 15
 MAX_RESULTS_DEFAULT = 10
+
+# ── National clinical-guideline bodies ─────────────────────────────────────
+# Per-country official guideline sources. We open these in the built-in browser
+# (no scraping — their sites are JS-driven and/or anti-bot protected). Where the
+# site accepts a query parameter we pre-fill it with {q}; otherwise we open the
+# search/landing page for the user to type into. PubMed's "Guidelines" source
+# already covers anything indexed there; these catch the national PDFs that
+# aren't, and give clinicians the authoritative local source directly.
+NATIONAL_GUIDELINE_BODIES = {
+    "it": {
+        "name": "SNLG — Sistema Nazionale Linee Guida",
+        "country": "Italy",
+        # Dedicated SNLG portal (the old /-/snlg path on iss.it is now dead). The
+        # concluded-guidelines section lists downloadable PDFs; search is on-site
+        # (JS-driven), so we open the portal rather than a pre-filled query.
+        "url": "https://snlg.iss.it",
+        "prefill": False,
+    },
+    "uk": {
+        "name": "NICE — National Institute for Health and Care Excellence",
+        "country": "United Kingdom",
+        "url": "https://www.nice.org.uk/search?q={q}",
+        "prefill": True,
+    },
+    "us": {
+        "name": "ECRI Guidelines Trust",
+        "country": "United States",
+        # The US National Guideline Clearinghouse closed in 2018; ECRI is the
+        # de-facto successor (free account required to view full guidelines).
+        "url": "https://guidelines.ecri.org/",
+        "prefill": False,
+    },
+    "de": {
+        "name": "AWMF — Leitlinienregister",
+        "country": "Germany",
+        "url": "https://register.awmf.org/de/suche?searchterm={q}",
+        "prefill": True,
+    },
+    "fr": {
+        "name": "HAS — Haute Autorité de Santé",
+        "country": "France",
+        "url": "https://www.has-sante.fr/jcms/fc_2875171/fr/recherche?text={q}",
+        "prefill": True,
+    },
+}
+
 
 # ── Auto-update configuration ──────────────────────────────────────────────
 # APP_DIR_PATH is set above (frozen-aware). VERSION ships as a bundled resource,
@@ -185,8 +237,8 @@ def http_get(url, headers=None, timeout=TIMEOUT):
     except urllib.error.HTTPError as e: return None, e.code
     except Exception: return None, 0
 
-def fetch_json(url, headers=None):
-    body, status = http_get(url, headers)
+def fetch_json(url, headers=None, timeout=TIMEOUT):
+    body, status = http_get(url, headers, timeout=timeout)
     if body:
         try: return json.loads(body), status
         except Exception: pass
@@ -298,9 +350,58 @@ def check_oa(doi):
                     return loc["pdf_url"]
     return None
 
+def _pmc_pdf_url(pmcid):
+    """Build the direct PMC PDF URL from a PMC id (with or without the 'PMC' prefix)."""
+    if not pmcid:
+        return None
+    p = str(pmcid).strip()
+    if not p:
+        return None
+    if not p.upper().startswith("PMC"):
+        p = "PMC" + p
+    return f"https://www.ncbi.nlm.nih.gov/pmc/articles/{p}/pdf/"
+
+_PMC_LOOKUP_CACHE = {}
+def pmcid_for_doi(doi):
+    """
+    Resolve a DOI to a PubMed Central id (or None) via NCBI's ID Converter API.
+    PMC membership means a free full-text PDF exists at a public URL, even for
+    papers whose 'home' is a paywalled publisher (e.g. ScienceDirect/Elsevier).
+    Cached per-process and fails soft (returns None on any error/timeout).
+    """
+    if not doi:
+        return None
+    key = doi.lower().strip()
+    if key in _PMC_LOOKUP_CACHE:
+        return _PMC_LOOKUP_CACHE[key]
+    pmcid = None
+    try:
+        url = ("https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+               f"?ids={urllib.parse.quote(doi)}&format=json&tool=medsearch&email=medsearch@example.org")
+        # Short timeout: this is optional enrichment, so never let a slow NCBI
+        # response hold up the search — fall back to the DOI link instead.
+        data, status = fetch_json(url, timeout=6)
+        if data and status == 200:
+            recs = data.get("records") or []
+            if recs:
+                pmcid = recs[0].get("pmcid")  # e.g. "PMC1234567" or None if not in PMC
+    except Exception:
+        pmcid = None
+    _PMC_LOOKUP_CACHE[key] = pmcid
+    return pmcid
+
 def resolve_access(doi):
     oa = check_oa(doi)
     if oa:  return "open", oa
+    # No OA copy from Unpaywall/OpenAlex — but the paper may still be free in
+    # PubMed Central (common for funded clinical research published in otherwise
+    # paywalled journals like those on ScienceDirect). Check PMC by DOI and, if
+    # present, route to the direct PMC PDF.
+    pmcid = pmcid_for_doi(doi)
+    if pmcid:
+        pdf = _pmc_pdf_url(pmcid)
+        if pdf:
+            return "open", pdf
     if doi: return "doi",  f"https://doi.org/{doi}"
     return "none", None
 
@@ -810,15 +911,13 @@ def search_pubmed(query, max_r, y_from, y_to, seen, strict=True,
 
         if is_duplicate(seen, doi, title): continue
         register(seen, doi, title)
-        kind, link = resolve_access(doi)
-        # If PubMed Central has the full text, prefer its direct PDF over a
-        # publisher page (the PMC copy is open and renders in the in-app viewer).
+        # PubMed gives us the PMC id directly in its XML when the full text is
+        # free in PubMed Central — use it for a direct PDF link without any extra
+        # network lookup. Otherwise fall back to the normal OA/PMC resolution.
         if pmcid:
-            pmcid_clean = pmcid.strip()
-            if not pmcid_clean.upper().startswith("PMC"):
-                pmcid_clean = "PMC" + pmcid_clean
-            kind = "open"
-            link = f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmcid_clean}/pdf/"
+            kind, link = "open", _pmc_pdf_url(pmcid)
+        else:
+            kind, link = resolve_access(doi)
         scihub = scihub_links(doi)
         results.append({"title":title,"authors":authors,"year":year,"journal":journal,
                         "quartile":get_quartile(journal),"doi":doi,"pmid":pmid,
@@ -1160,6 +1259,9 @@ SESSION = {"articles": [], "query": "", "history": [], "last_synthesis": ""}
 def index():
     has_key = bool((CONFIG.get("anthropic_api_key","") or "").strip())
     ai_pref = CONFIG.get("ai_enabled", True)
+    # Optional deep-link from the menu-bar quick search: /?q=...&src=...
+    auto_query  = (request.args.get("q") or "").strip()
+    auto_source = (request.args.get("src") or CONFIG.get("default_source","pubmed") or "pubmed").strip()
     return render_template("index.html",
                            ai_on=(has_key and ai_pref),   # active only if key AND enabled
                            has_ai_key=has_key,             # whether a key exists at all
@@ -1170,7 +1272,9 @@ def index():
                            has_scopus=bool((CONFIG.get("scopus_api_key","") or "").strip()),
                            has_wos=bool((CONFIG.get("wos_api_key","") or "").strip()),
                            institution_proxies=CONFIG.get("institution_proxies", []),
-                           active_proxy=CONFIG.get("active_proxy", 0))
+                           active_proxy=CONFIG.get("active_proxy", 0),
+                           auto_query=auto_query,
+                           auto_source=auto_source)
 
 @app.route("/ai/toggle", methods=["POST"])
 def ai_toggle():
@@ -1196,11 +1300,93 @@ def set_active_proxy():
     save_config(CONFIG)
     return jsonify({"ok": True, "active_proxy": CONFIG["active_proxy"]})
 
+@app.route("/guidelines/bodies")
+def guideline_bodies():
+    """List the available national guideline bodies (for the country picker)."""
+    out = [{"code": code, "name": b["name"], "country": b["country"],
+            "prefill": b["prefill"]}
+           for code, b in NATIONAL_GUIDELINE_BODIES.items()]
+    # stable, country-name order
+    out.sort(key=lambda x: x["country"])
+    return jsonify({"bodies": out, "selected": CONFIG.get("guideline_country", "")})
+
+@app.route("/guidelines/link", methods=["POST"])
+def guideline_link():
+    """
+    Build the URL to open for a national guideline body. If the body supports a
+    query parameter, the current search query is pre-filled; otherwise we return
+    the portal/search URL for the user to type into. Also persists the chosen
+    country so it's remembered.
+    """
+    data = request.json or {}
+    code = (data.get("country") or "").strip().lower()
+    query = (data.get("query") or "").strip()
+    body = NATIONAL_GUIDELINE_BODIES.get(code)
+    if not body:
+        return jsonify({"ok": False, "message": "Unknown country."}), 200
+    # Remember the selection
+    CONFIG["guideline_country"] = code
+    save_config(CONFIG)
+    url = body["url"]
+    prefilled = False
+    if body["prefill"] and "{q}" in url:
+        if query:
+            url = url.replace("{q}", urllib.parse.quote(query))
+            prefilled = True
+        else:
+            # no query to fill — strip to the bare search page
+            url = url.split("?")[0]
+    return jsonify({"ok": True, "url": url, "name": body["name"],
+                    "country": body["country"], "prefilled": prefilled})
+
 @app.route("/onboarding/dismiss", methods=["POST"])
 def onboarding_dismiss():
     CONFIG["onboarding_seen"] = True
     save_config(CONFIG)
     return jsonify({"ok": True})
+
+@app.route("/default_source", methods=["GET", "POST"])
+def default_source():
+    """Get or set the menu-bar quick-search default source (shared config)."""
+    if request.method == "POST":
+        data = request.json or {}
+        src = (data.get("source") or "").strip() or "pubmed"
+        CONFIG["default_source"] = src
+        save_config(CONFIG)
+        return jsonify({"ok": True, "default_source": src})
+    return jsonify({"default_source": CONFIG.get("default_source", "pubmed")})
+
+# ── Menu-bar → native-window search handoff ────────────────────────────────
+# The menu-bar companion app can't reach into the running native window
+# directly (separate process). Instead it POSTs a search here; the native
+# window polls /pending_search and runs anything queued — so the search happens
+# INSIDE the existing window, no browser hop.
+_PENDING_SEARCH = {"query": None, "source": None, "ts": 0}
+
+@app.route("/queue_search", methods=["POST"])
+def queue_search():
+    """Menu-bar app posts a search request to be picked up by the native window."""
+    data = request.json or {}
+    query = (data.get("query") or "").strip()
+    source = (data.get("source") or CONFIG.get("default_source", "pubmed")).strip()
+    if not query:
+        return jsonify({"ok": False, "message": "Empty query."}), 200
+    _PENDING_SEARCH["query"] = query
+    _PENDING_SEARCH["source"] = source
+    _PENDING_SEARCH["ts"] = time.time()
+    return jsonify({"ok": True})
+
+@app.route("/pending_search")
+def pending_search():
+    """Native window polls this; returns and clears any queued search."""
+    q = _PENDING_SEARCH["query"]
+    if not q:
+        return jsonify({"pending": False})
+    src = _PENDING_SEARCH["source"]
+    # Clear it so it runs once.
+    _PENDING_SEARCH["query"] = None
+    _PENDING_SEARCH["source"] = None
+    return jsonify({"pending": True, "query": q, "source": src})
 
 # ── Auto-update routes ─────────────────────────────────────────────────────
 
@@ -1316,6 +1502,17 @@ def search_stream():
         if "cochrane" in sources or "all" in sources:
             runners.append(("cochrane", "Cochrane",
                             lambda: search_cochrane(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
+        # Clinical practice guidelines: PubMed restricted to guideline publication
+        # types. Captures national/society guidelines from many countries indexed
+        # in PubMed (incl. Italy's SNLG, US, UK, etc.). Runs BEFORE plain PubMed so
+        # guideline papers are claimed and labelled "Guidelines" (same pattern as
+        # Cochrane claiming systematic reviews first).
+        if "guidelines" in sources or "all" in sources:
+            runners.append(("guidelines", "Guidelines",
+                            lambda: search_pubmed(
+                                query, max_r, y_from, y_to, seen, strict=strict, sort=sort,
+                                extra_filter="(Guideline[ptyp] OR \"Practice Guideline\"[ptyp])",
+                                source_label="Guidelines")))
         if "pubmed" in sources or "all" in sources:
             runners.append(("pubmed", "PubMed",
                             lambda: search_pubmed(query, max_r, y_from, y_to, seen, strict=strict, sort=sort)))
@@ -1957,7 +2154,14 @@ def saved_delete(sid):
     return jsonify({"ok": True, "saved": items})
 
 if __name__ == "__main__":
-    import threading, socket
+    import threading, socket, argparse
+
+    # Optional deep-link args from the menu-bar app: open the window straight on
+    # a search. e.g.  python3 app.py --query "glioma" --source guidelines
+    _parser = argparse.ArgumentParser(add_help=False)
+    _parser.add_argument("--query", default="")
+    _parser.add_argument("--source", default="")
+    _args, _ = _parser.parse_known_args()
 
     # Find a free port (in case 5050 is taken)
     def free_port(preferred=5050):
@@ -1969,7 +2173,21 @@ if __name__ == "__main__":
             s2.bind(("127.0.0.1", 0)); port = s2.getsockname()[1]; s2.close(); return port
 
     PORT = free_port(5050)
-    URL  = f"http://127.0.0.1:{PORT}"
+    # If launched with a query, point the window straight at the search.
+    if _args.query.strip():
+        _qs = urllib.parse.urlencode({"q": _args.query.strip(),
+                                      "src": (_args.source or "").strip()})
+        URL = f"http://127.0.0.1:{PORT}/?{_qs}"
+    else:
+        URL = f"http://127.0.0.1:{PORT}"
+
+    # Record the chosen port so the menu-bar companion app can find this server
+    # (it may be on a non-default port if 5050 was taken). Best-effort.
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        (CONFIG_DIR / "server_port").write_text(str(PORT))
+    except Exception:
+        pass
 
     def run_server():
         app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True, use_reloader=False)
@@ -2010,7 +2228,18 @@ if __name__ == "__main__":
             min_size=(940, 640),
             js_api=api,
         )
-        webview.start()   # blocks until window closed; then process exits cleanly
+        # Persist the embedded browser's cookies and session so an institutional
+        # login carries across every article window AND survives app restarts —
+        # log in once, not for every paper. By default pywebview runs in private
+        # mode (no cookies saved), which is why each window asked to log in again.
+        # If this pywebview build doesn't support these options, fall back to a
+        # plain start so the app still launches (just without persisted login).
+        try:
+            browser_data_dir = str(CONFIG_DIR / "browser_data")
+            os.makedirs(browser_data_dir, exist_ok=True)
+            webview.start(private_mode=False, storage_path=browser_data_dir)
+        except TypeError:
+            webview.start()
     except ImportError:
         import webbrowser
         print(f"\n  🔬  MedSearch {LOCAL_VERSION}  —  starting…")

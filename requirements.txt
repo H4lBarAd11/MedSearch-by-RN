@@ -3,3 +3,6 @@
 
 flask>=3.0          # web framework powering the local backend
 pywebview>=4.4      # native desktop window (falls back to browser if absent)
+
+# Optional — only needed for the macOS menu-bar companion app (menubar.py):
+rumps>=0.4          # macOS status-bar app framework (macOS only)

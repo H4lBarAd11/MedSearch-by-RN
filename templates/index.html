@@ -121,8 +121,7 @@
     user-select: none;
     transition: background var(--transition);
   }
-  .db-item:hover { background: var(--bg3); }
-  .db-item input[type=checkbox] { display: none; }
+  .db-item:hover { background: var(--bg3); }  .db-item input[type=checkbox] { display: none; }
   .db-check {
     width: 16px; height: 16px;
     border: 1.5px solid var(--border2);
@@ -237,6 +236,28 @@
   }
   .filter-input:focus { border-color: var(--accent); }
   .filter-input::placeholder { color: var(--text3); }
+
+  .natl-guideline-btn {
+    width: 100%;
+    margin-top: 8px;
+    background: var(--accent-tint);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-family: var(--font);
+    font-weight: 500;
+    padding: 7px 10px;
+    cursor: pointer;
+    transition: background var(--transition);
+  }
+  .natl-guideline-btn:hover { background: var(--accent); color: #fff; }
+  .natl-guideline-hint {
+    font-size: 0.68rem;
+    color: var(--text3);
+    line-height: 1.45;
+    margin-top: 6px;
+  }
 
   /* History */
   .history-list {
@@ -1591,28 +1612,6 @@
   .empty-title { font-size: 0.95rem; color: var(--text2); }
   .empty-sub { font-size: 0.8rem; max-width: 320px; line-height: 1.6; }
 
-  .loading-card {
-    background: var(--bg2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius2);
-    padding: 18px 20px;
-    margin-bottom: 10px;
-    animation: shimmer 1.5s infinite;
-  }
-  @keyframes shimmer {
-    0%   { opacity: 1; }
-    50%  { opacity: 0.5; }
-    100% { opacity: 1; }
-  }
-  .loading-line {
-    height: 12px;
-    background: var(--bg3);
-    border-radius: 6px;
-    margin-bottom: 8px;
-  }
-  .loading-line.short { width: 40%; }
-  .loading-line.med   { width: 70%; }
-
   /* ── Onboarding modal ──────────────────────────────────────────────── */
   .onboard-modal {
     background: var(--bg2);
@@ -2072,6 +2071,11 @@
         <span class="db-name">Cochrane Reviews</span>
         <span class="db-badge free">Free</span>
       </div>
+      <div class="db-item" data-db="guidelines">
+        <div class="db-check"></div>
+        <span class="db-name">Guidelines</span>
+        <span class="db-badge free">Free</span>
+      </div>
     </div>
     <button class="select-all-btn" id="selectAllBtn">Select all</button>
 
@@ -2087,6 +2091,14 @@
           <input class="filter-input" type="number" id="yearTo" placeholder="e.g. 2024" min="1900" max="2099">
         </div>
       </div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:14px">National guidelines</div>
+    <div class="filter-block">
+      <span class="filter-label">Open your country's official guideline body</span>
+      <select class="filter-input" id="guidelineCountry" style="margin-top:4px; cursor:pointer"></select>
+      <button class="natl-guideline-btn" id="natlGuidelineBtn" onclick="openNationalGuidelines()">📋 Search national guidelines</button>
+      <div class="natl-guideline-hint" id="natlGuidelineHint"></div>
     </div>
 
     <div class="sidebar-section section-with-menu">
@@ -2690,7 +2702,108 @@ window.addEventListener('load', () => {
 });
 
 // Apply the initial AI on/off state to the UI (hides assistant bubble if off)
-window.addEventListener('load', () => { applyAIState(); renderProxyPicker(); });
+window.addEventListener('load', () => { applyAIState(); renderProxyPicker(); loadGuidelineBodies(); maybeAutoSearch(); startPendingSearchPolling(); });
+
+// If launched from the menu-bar quick search (/?q=...&src=...), pre-select the
+// requested source(s), fill the query, and run the search immediately.
+function maybeAutoSearch() {
+  const q = {{ auto_query | tojson }};
+  const src = {{ auto_source | tojson }};
+  if (!q) return;
+  runSearchWithSource(q, src, 150);
+}
+
+// Fill the query, select the requested source(s), and run the search. Shared by
+// the initial deep-link (maybeAutoSearch) and the menu-bar handoff poller.
+function runSearchWithSource(q, src, delay) {
+  if (!q) return;
+  const input = document.getElementById('searchInput');
+  if (input) input.value = q;
+  if (src) {
+    document.querySelectorAll('.db-item').forEach(item => {
+      const db = item.dataset.db;
+      const shouldCheck = (src === 'all') ? true : (db === src);
+      const needsKey = item.dataset.needsKey;
+      const blocked = shouldCheck && needsKey && !dbKeyPresent[needsKey];
+      item.classList.toggle('checked', shouldCheck && !blocked);
+    });
+    if (!document.querySelectorAll('.db-item.checked').length) {
+      const pm = document.querySelector('.db-item[data-db="pubmed"]');
+      if (pm) pm.classList.add('checked');
+    }
+  }
+  setTimeout(() => { runSearch(); }, delay || 0);
+}
+
+// Poll for searches queued by the menu-bar app, and run them in THIS window so
+// the search always happens inside the native app (no browser hop).
+function startPendingSearchPolling() {
+  setInterval(async () => {
+    try {
+      const res = await fetch('/pending_search');
+      const data = await res.json();
+      if (data && data.pending && data.query) {
+        // Bring this window to the front, then run the search here.
+        try { window.focus(); } catch(e) {}
+        runSearchWithSource(data.query, data.source, 50);
+      }
+    } catch(e) { /* server momentarily busy; ignore */ }
+  }, 1000);
+}
+
+// ── National guideline bodies ───────────────────────────────────────────────
+let guidelineBodies = [];
+async function loadGuidelineBodies() {
+  const sel = document.getElementById('guidelineCountry');
+  if (!sel) return;
+  try {
+    const data = await (await fetch('/guidelines/bodies')).json();
+    guidelineBodies = data.bodies || [];
+    sel.innerHTML = guidelineBodies.map(b =>
+      `<option value="${b.code}" ${b.code === data.selected ? 'selected' : ''}>${escHtml(b.country)} — ${escHtml(shortBodyName(b.name))}</option>`
+    ).join('');
+    updateGuidelineHint();
+  } catch(e) { /* leave empty */ }
+  sel.onchange = updateGuidelineHint;
+}
+
+// The body names are long; show a short tag in the dropdown
+function shortBodyName(name) {
+  // take the acronym before the em-dash if present
+  const m = name.split('—')[0].trim();
+  return m || name;
+}
+
+function updateGuidelineHint() {
+  const sel = document.getElementById('guidelineCountry');
+  const hint = document.getElementById('natlGuidelineHint');
+  if (!sel || !hint) return;
+  const b = guidelineBodies.find(x => x.code === sel.value);
+  if (!b) { hint.textContent = ''; return; }
+  hint.textContent = b.prefill
+    ? `Opens ${b.name} with your search term filled in.`
+    : `Opens ${b.name} (type your term there — its site doesn't accept linked searches).`;
+}
+
+async function openNationalGuidelines() {
+  const sel = document.getElementById('guidelineCountry');
+  if (!sel || !sel.value) return;
+  const query = (document.getElementById('searchInput')?.value || '').trim();
+  try {
+    const res = await fetch('/guidelines/link', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({country: sel.value, query})
+    });
+    const data = await res.json();
+    if (data.ok && data.url) {
+      openInAppBrowser(data.url, data.name);
+    } else {
+      showToast(data.message || 'Could not open guidelines.', 'red');
+    }
+  } catch(e) {
+    showToast('Could not open guidelines: ' + e.message, 'red');
+  }
+}
 
 let synthesisOpen  = false;
 let searchRunning  = false;
@@ -4463,16 +4576,6 @@ function setStatus(state, text) {
   const dot = document.getElementById('statusDot');
   dot.className = 'status-dot ' + (state === 'idle' ? '' : state);
   document.getElementById('statusText').textContent = text;
-}
-
-function showLoadingCards() {
-  const area = document.getElementById('resultsArea');
-  area.innerHTML = [1,2,3].map(() => `
-    <div class="loading-card">
-      <div class="loading-line med"></div>
-      <div class="loading-line short"></div>
-      <div class="loading-line" style="width:90%"></div>
-    </div>`).join('');
 }
 
 function showToast(msg, type) {
