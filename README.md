@@ -186,6 +186,14 @@ Everything runs locally on your machine. Your searches, API keys, and saved data
 
 ---
 
+## Open access & open science
+
+MedSearch is built in the spirit of open science. The goal is to *widen* access to the medical and scientific literature, not gate it: the app is free, the full source is openly available, and it's designed to help anyone — clinicians, researchers, students — search more thoroughly without paywalls standing between them and the evidence. It surfaces open-access full-text wherever it exists, works with institutional subscriptions so people can use the access they already have, and adds nothing of its own to lock down.
+
+Contributions in the same spirit are welcome. Anyone is free to use, study, adapt, and build on this project — and to share their improvements back, so the tool keeps getting better for everyone.
+
 ## License
 
-MIT — free to use, modify, and distribute.
+Licensed under the **Apache License 2.0** — a permissive open-source license. You are free to use, modify, distribute, and build upon this software, including for commercial purposes, provided you retain the copyright and license notices and state any significant changes you make. The license also includes an explicit patent grant, protecting users and contributors. See the [`LICENSE`](LICENSE) file for the full text.
+
+Copyright © 2026 Riccardo Nevoso.
