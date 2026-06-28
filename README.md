@@ -10,9 +10,10 @@ MedSearch runs as a **native desktop window** (macOS, Windows, Linux). It search
 
 ## What it does
 
-- **Searches six databases at once** — PubMed/MEDLINE, Cochrane Reviews, ClinicalTrials.gov, arXiv, Scopus, and Web of Science — and merges the results into one deduplicated list.
+- **Searches seven sources at once** — PubMed/MEDLINE, Cochrane Reviews, ClinicalTrials.gov, arXiv, Scopus, Web of Science, and a clinical-**Guidelines** source — and merges the results into one deduplicated list.
 - **Clinical practice guidelines** — a "Guidelines" source surfaces national and society guidelines indexed in PubMed (works for many countries). Plus a **National guidelines** button that opens your country's official body directly — SNLG (Italy), NICE (UK), ECRI (US), AWMF (Germany), HAS (France) — with your search term pre-filled where the site allows.
 - **Sort by relevance or recency** — a toggle beside the search bar reorders results by best match or newest-first, applied per database.
+- **Load more results** — a "Find X more per source" button fetches the next batch from every active source and appends it (deduplicated), so you can dig deeper without re-running the search. X matches the per-source count you set beside the search bar.
 - **Finds free full-text** via Unpaywall and OpenAlex, with a Sci-Hub fallback when no open-access copy exists.
 - **Reads PDFs in-app** — a built-in viewer with fit-to-width, zoom, and save-to-disk. Open-access *and* Sci-Hub PDFs open right inside the window.
 - **Institutional library access** — point MedSearch at your university's EZProxy/OpenAthens and paywalled papers your institution subscribes to open through your library login, in a built-in browser window. Save several institutions and switch between them from the search bar.
@@ -22,7 +23,7 @@ MedSearch runs as a **native desktop window** (macOS, Windows, Linux). It search
 - **Export** to Markdown, BibTeX, or RIS, or send straight to **Zotero** (if the desktop app is running).
 - **Quality-of-life**: journal quartile badges, MeSH term hints, year filters, saved searches, recent-search history, and a built-in settings panel for API keys (no config files to edit).
 - **Friendly onboarding** — a first-launch guide (English / Italiano) and one-click auto-update.
-- **macOS menu-bar quick search** (optional companion app) — a 🔍 MedSearch icon in your status bar. Click it, type a query, and the full MedSearch window opens with results already loading, searching whichever database you've set as your default. Recent searches and the default-source picker live right in the dropdown. The menu uses native macOS styling (Liquid Glass on Tahoe), so it blends in with the system.
+- **macOS menu-bar quick search** (optional companion app) — a small books-and-network icon in your status bar. Click it, type a query, and the search runs **inside the main MedSearch window** (it opens the app first if it isn't already running). Recent searches and the default-source picker live right in the dropdown. The menu uses native macOS styling (Liquid Glass on Tahoe), so it blends in with the system.
 
 ---
 
@@ -140,12 +141,14 @@ MedSearch-by-RN/
 ├── templates/
 │   └── index.html        ← The entire UI (HTML/CSS/JS)
 ├── menubar.py            ← macOS menu-bar quick-search companion (optional)
-├── make_menubar_app.sh   ← Builds "MedSearch Menu Bar.app" (macOS)
+├── MedSearch.command     ← Double-click launcher (sets up + runs the app)
+├── setup_main.py         ← py2app build for the main app  (→ MedSearch.app)
+├── setup.py              ← py2app build for the menu-bar app
 ├── requirements.txt      ← Python dependencies (rumps is optional, macOS only)
-├── make_app.sh           ← Builds MedSearch.app (macOS)
-├── build.sh / build.bat  ← Standalone builds (macOS·Linux / Windows)
-├── launch_gui.sh         ← Simple dev launcher (macOS / Linux)
-├── icon.svg              ← App icon
+├── icon.icns / icon.svg  ← App icons
+├── menubar_icon.png      ← Menu-bar glyph (books + network)
+├── menubar_app_icon.icns ← Menu-bar app bundle icon
+├── render_*.py           ← Scripts that generate the icons (reproducible)
 └── VERSION               ← Current version
 ```
 
