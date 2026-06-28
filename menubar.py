@@ -14,12 +14,13 @@ That keeps this app tiny and robust.
 
 How it finds/launches MedSearch:
   • It shares the same config dir (~/.medsearch) as the main app.
-  • When you search, it ensures the MedSearch server is running (launching app.py
-    if needed), then opens http://127.0.0.1:<port>/?q=<query>&src=<source> — the
-    main window picks up the query and runs it automatically.
+  • When you search, it ensures the MedSearch server is running (launching the
+    app if needed), then POSTs the query to the server's /queue_search endpoint.
+    The native MedSearch window polls /pending_search, picks up the queued search,
+    and runs it IN-WINDOW — no browser, whether the app was already open or not.
 
 Requirements:  pip install rumps
-Run:           python3 menubar.py   (or bundle with py2app — see make_menubar_app.sh)
+Run:           python3 menubar.py   (or bundle with py2app — see setup.py)
 """
 
 import sys
@@ -409,10 +410,6 @@ class MedSearchBar(rumps.App):
                 )
 
         threading.Thread(target=worker, daemon=True).start()
-
-    def _launch_with_query(self, query, src):
-        """Kept for compatibility; run_query now queues into the native window."""
-        return _launch(["--query", query, "--source", src])
 
     def open_window(self, _):
         """

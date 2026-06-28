@@ -34,3 +34,7 @@ dist/
 build/
 dist/
 *.egg-info/
+
+# extra build artifacts
+*.egg-info/
+"MedSearch Menu Bar.app"/

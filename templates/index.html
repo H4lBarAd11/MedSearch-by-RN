@@ -2647,9 +2647,11 @@ function checkForUpdate() {
           <span class="ver">${escHtml(data.local)}</span> → <span class="ver">${escHtml(data.remote)}</span>`;
         btn.style.display = '';
       } else {
-        // Not a git checkout — can't auto-apply, just inform
+        // Not a git checkout (e.g. a frozen .app) — can't auto-apply. Point
+        // them at the source install, which DOES auto-update.
         text.innerHTML = `A new version (<span class="ver">${escHtml(data.remote)}</span>) is available, but this copy can't auto-update.<br><br>
-          Ask whoever set this up to re-install from GitHub.`;
+          To get automatic updates, run MedSearch from a clone of the GitHub repo
+          (double-click <span class="mono">MedSearch.command</span>) instead of the packaged app.`;
         btn.style.display = 'none';
       }
       document.getElementById('updateOverlay').classList.add('open');

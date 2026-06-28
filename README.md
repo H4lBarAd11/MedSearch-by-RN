@@ -39,34 +39,41 @@ python app.py        # use python3 on macOS/Linux
 
 MedSearch opens in its own desktop window. (If the native-window library isn't available, it falls back to opening in your browser automatically.)
 
-### macOS — double-clickable app
+**Installing from a git clone is the recommended way**, because the in-app **Update** button works only for clones — it runs `git pull` to fetch the latest version. A packaged `.app` can't update itself (see note below).
 
-To get a real app you can keep in your Dock (no Terminal needed to launch):
+### macOS — double-clickable launcher (recommended)
+
+After cloning, you don't need the Terminal to start MedSearch day-to-day. Just **double-click `MedSearch.command`** in the project folder. On first run it sets up a local environment and installs dependencies (one time); after that it launches the app directly. The in-app Update button keeps it current.
+
+> If macOS blocks it the first time ("unidentified developer"), right-click `MedSearch.command` ▸ **Open** ▸ **Open**. You only do this once.
+
+### macOS — self-contained app bundle (no auto-update)
+
+If you'd rather have a fully packaged `.app` (Python embedded, nothing to install), build one with py2app:
 
 ```bash
-bash make_app.sh
+pip install py2app
+python3 setup_main.py py2app
 ```
 
-This builds **MedSearch.app** in the project folder. Drag it to `/Applications` or your Dock and launch it like any other app.
+This builds **MedSearch.app** in `dist/`. Drag it to `/Applications`. **Caveat:** a packaged bundle *cannot use the in-app Update button* (it has no git repo to pull into) — you'd rebuild or re-download to update. For colleagues who want automatic updates, use the git-clone + `MedSearch.command` method above instead.
 
 ### macOS — menu-bar quick search (optional)
 
 A lightweight status-bar companion that lets you start a search from anywhere without first opening the main window.
 
 ```bash
-pip3 install rumps          # one-time; macOS only
-python3 menubar.py          # run it directly…
-# …or build a background app you can add to Login Items:
-bash make_menubar_app.sh
+pip3 install rumps py2app      # one-time; macOS only
+python3 menubar.py             # run it directly to try it…
+# …or build a proper background app you can add to Login Items:
+python3 setup.py py2app
 ```
 
-`make_menubar_app.sh` builds **"MedSearch Menu Bar.app"** — a background app with no Dock icon (just the menu-bar glyph). Add it to **System Settings ▸ General ▸ Login Items** to have it start automatically. Keep it in the same folder as `app.py`, since it launches the main app from beside itself. The menu bar and its dropdown use native macOS components, so they automatically adopt the system look (Liquid Glass on macOS Tahoe 26+) — your sage-green theme stays where it belongs, in the main app window.
+`python3 setup.py py2app` builds **"MedSearch Menu Bar.app"** in `dist/` — a background app with no Dock icon (just the menu-bar glyph). Move it to `/Applications` and add it to **System Settings ▸ General ▸ Login Items** to have it start automatically. The menu bar and its dropdown use native macOS components, so they automatically adopt the system look (Liquid Glass on macOS Tahoe 26+) — your sage-green theme stays where it belongs, in the main app window.
 
-**Known limitation — where results open:** when you run a quick search, what happens depends on whether MedSearch is already running:
-- **Not running yet** → the menu-bar app launches the main app and its **native window opens straight on your results**. This is the usual case.
-- **Already running** → a separate process can't re-point an existing native window, so the search opens in your **default browser** instead (same app, full functionality, just a browser tab rather than the native window).
+When you run a quick search, the menu-bar app opens (or reuses) the main MedSearch window and runs the search **inside it** — if MedSearch isn't already running, it launches automatically first. Clicking the menu-bar icon opens a fresh search prompt; the default database for quick searches is set from the icon's "Default source" submenu.
 
-This is an inherent constraint of the native-window approach, not a bug. For the common "quick capture when MedSearch isn't already open" case, you get the native window.
+> **Note:** the menu-bar app is a separate macOS-only bundle. Like the main bundle, editing the code means rebuilding it (`python3 setup.py py2app`) and re-copying to `/Applications`.
 
 ### macOS — one-line terminal shortcut
 
