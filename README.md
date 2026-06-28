@@ -149,6 +149,8 @@ MedSearch-by-RN/
 ├── menubar_icon.png      ← Menu-bar glyph (books + network)
 ├── menubar_app_icon.icns ← Menu-bar app bundle icon
 ├── render_*.py           ← Scripts that generate the icons (reproducible)
+├── LICENSE               ← Apache License 2.0 (full text)
+├── NOTICE                ← Attribution notice (per Apache 2.0)
 └── VERSION               ← Current version
 ```
 
@@ -194,6 +196,8 @@ Contributions in the same spirit are welcome. Anyone is free to use, study, adap
 
 ## License
 
-Licensed under the **Apache License 2.0** — a permissive open-source license. You are free to use, modify, distribute, and build upon this software, including for commercial purposes, provided you retain the copyright and license notices and state any significant changes you make. The license also includes an explicit patent grant, protecting users and contributors. See the [`LICENSE`](LICENSE) file for the full text.
+Licensed under the **Apache License 2.0** — a permissive open-source license. You are free to use, modify, distribute, and build upon this software, including for commercial purposes, provided you retain the copyright and license notices and state any significant changes you make. The license also includes an explicit patent grant, protecting users and contributors. See the [`LICENSE`](LICENSE) file for the full text, and [`NOTICE`](NOTICE) for attribution details.
+
+A note on data: MedSearch queries literature services (PubMed, Cochrane, ClinicalTrials.gov, arXiv, Scopus, Web of Science, Unpaywall, OpenAlex, and others) on your behalf and does not redistribute their content — all article data belongs to its respective publishers and providers, and your use of those services is subject to their own terms.
 
 Copyright © 2026 Riccardo Nevoso.
