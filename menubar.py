@@ -1,11 +1,25 @@
 #!/usr/bin/env python3
+#
+# Copyright 2026 Riccardo Nevoso
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
 MedSearch menu-bar app (macOS)
 ==============================
 
 A lightweight status-bar companion to MedSearch. Click the menu-bar icon to get
-a dropdown with a quick search: type a query and the full MedSearch window opens
-with results already loading, searching whichever source you've set as default.
+a dropdown with a quick search: type a query and it runs inside the main
+MedSearch window, searching whichever source you've set as default.
 
 This is a SEPARATE, standalone process from the main app. It does not run the
 search itself — it hands off to the main MedSearch window (a real browser view

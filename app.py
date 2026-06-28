@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
+#
+# Copyright 2026 Riccardo Nevoso
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """
-MedSearch v4.0 — Flask Web GUI
+MedSearch — Flask backend + native desktop window.
 Author: Riccardo Nevoso
 
-Wraps all search logic from medsearch.py and serves a browser-based interface.
-Results and AI text stream live via Server-Sent Events (SSE).
+Searches several medical/scientific literature sources in parallel and serves a
+native desktop UI (via pywebview). Results and AI text stream live via
+Server-Sent Events (SSE).
 """
 
 import sys, os, json, re, time, threading, urllib.parse, urllib.request

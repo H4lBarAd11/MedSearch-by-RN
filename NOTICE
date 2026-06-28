@@ -1,0 +1,18 @@
+MedSearch
+Copyright 2026 Riccardo Nevoso
+
+This product is developed and maintained by Riccardo Nevoso.
+
+Licensed under the Apache License, Version 2.0 (see the LICENSE file).
+
+---
+
+MedSearch is an open-science tool for searching the medical and scientific
+literature. It queries public and subscription literature sources on the user's
+behalf and does not redistribute their content; all article data belongs to its
+respective publishers and providers (including, among others, PubMed/NCBI,
+Cochrane, ClinicalTrials.gov, arXiv, Scopus/Elsevier, Web of Science/Clarivate,
+Unpaywall, and OpenAlex). Use of those services is subject to their own terms.
+
+This software builds on open-source components, including Flask, pywebview, and
+rumps, each distributed under its own permissive license.
