@@ -4,7 +4,7 @@
 
 Built by [Riccardo Nevoso](https://github.com/H4lBarAd11) for clinicians and researchers who want one fast, friendly place to search the literature without juggling a dozen browser tabs.
 
-MedSearch runs as a **native desktop window** (macOS, Windows, Linux). It searches PubMed, Cochrane, ClinicalTrials.gov, arXiv, Scopus, and Web of Science simultaneously, removes duplicates, finds free full-text where it exists, and — if you add a Claude API key — summarizes and helps you reason about the results.
+MedSearch runs as a **native desktop window** (macOS, Windows, Linux). It searches PubMed, Cochrane, ClinicalTrials.gov, arXiv, Scopus, Web of Science, and clinical guidelines simultaneously, removes duplicates, finds free full-text where it exists, and — if you add a Claude API key — summarizes and helps you reason about the results.
 
 ---
 
@@ -57,7 +57,7 @@ pip install py2app
 python3 setup_main.py py2app
 ```
 
-This builds **MedSearch.app** in `dist/`. Drag it to `/Applications`. **Caveat:** a packaged bundle *cannot use the in-app Update button* (it has no git repo to pull into) — you'd rebuild or re-download to update. For colleagues who want automatic updates, use the git-clone + `MedSearch.command` method above instead.
+This builds **MedSearch.app** in `dist/`. Drag it to `/Applications`. **Caveat:** a packaged bundle *cannot use the in-app Update button* (it has no git repo to pull into) — you'd rebuild or re-download to update. If you want automatic updates, use the git-clone + `MedSearch.command` method above instead.
 
 ### macOS — menu-bar quick search (optional)
 
@@ -70,7 +70,7 @@ python3 menubar.py             # run it directly to try it…
 python3 setup.py py2app
 ```
 
-`python3 setup.py py2app` builds **"MedSearch Menu Bar.app"** in `dist/` — a background app with no Dock icon (just the menu-bar glyph). Move it to `/Applications` and add it to **System Settings ▸ General ▸ Login Items** to have it start automatically. The menu bar and its dropdown use native macOS components, so they automatically adopt the system look (Liquid Glass on macOS Tahoe 26+) — your sage-green theme stays where it belongs, in the main app window.
+`python3 setup.py py2app` builds **"MedSearch Menu Bar.app"** in `dist/` — a background app with no Dock icon (just the menu-bar glyph). Move it to `/Applications` and add it to **System Settings ▸ General ▸ Login Items** to have it start automatically. The menu bar and its dropdown use native macOS components, so they automatically adopt the system look (Liquid Glass on macOS Tahoe 26+), while the app's own colours stay in the main window.
 
 When you run a quick search, the menu-bar app opens (or reuses) the main MedSearch window and runs the search **inside it** — if MedSearch isn't already running, it launches automatically first. Clicking the menu-bar icon opens a fresh search prompt; the default database for quick searches is set from the icon's "Default source" submenu.
 
@@ -95,7 +95,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-MedSearch opens in its own window. To build a standalone `.exe` that colleagues can run without installing Python, run `build.bat` and share the resulting `dist\` folder.
+MedSearch opens in its own window. The in-app **Update** button works here too (it runs `git pull`), so running from the clone keeps it current. The double-clickable launcher and the menu-bar companion are macOS-only; on Windows, launch with `python app.py` (or create a shortcut to it).
 
 ---
 
@@ -163,7 +163,7 @@ You're off your institution's network. Use your university VPN, or add an Elsevi
 Some publisher links are landing pages rather than direct PDFs, and Sci-Hub occasionally lacks a paper. In those cases MedSearch opens the article in the built-in browser automatically (and closes the empty PDF window), so you can read it through your institutional login if you have one set up.
 
 **The menu-bar app icon doesn't appear.**
-Make sure `rumps` is installed (`pip3 install rumps`) and that you launched `menubar.py` (or "MedSearch Menu Bar.app"). If you built the app, it's a background app — there's no Dock icon by design; look for 🔍 MedSearch in the menu bar at the top of the screen. If a quick search does nothing, confirm `menubar.py` is in the same folder as `app.py`.
+Make sure `rumps` is installed (`pip3 install rumps`) and that the app was launched (`python3 menubar.py`, or "MedSearch Menu Bar.app" if built with py2app). It's a background app — there's no Dock icon by design; look for the small books-and-network icon in the menu bar at the top of the screen. The icon needs a framework build of Python (the system/Homebrew `python3`), not a virtual environment — if it never shows, run it with `/opt/homebrew/bin/python3 menubar.py` or build the bundle with py2app.
 
 **PubMed rate-limiting (HTTP 429).**
 Add a free NCBI API key in Settings — it raises the limit from 3 to 10 requests/sec.
